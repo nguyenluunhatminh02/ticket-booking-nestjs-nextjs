@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+models/
+__pycache__/
+*.pyc
+.git/
+.venv/
+venv/
+Dockerfile
+.dockerignore

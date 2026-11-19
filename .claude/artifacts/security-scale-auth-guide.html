@@ -1,0 +1,1764 @@
+<title>Security at Scale</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  :root {
+    /* Color tokens - Security/Trust palette */
+    --bg-primary: #0a0e1a;
+    --bg-secondary: #131824;
+    --bg-tertiary: #1a2035;
+    --bg-card: #1e2538;
+    --bg-code: #0d1117;
+
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-tertiary: #6e7681;
+
+    --accent-primary: #58a6ff;
+    --accent-secondary: #3fb950;
+    --accent-warning: #d29922;
+    --accent-danger: #f85149;
+    --accent-info: #79c0ff;
+
+    --border-primary: #30363d;
+    --border-secondary: #21262d;
+
+    --gradient-start: #1f6feb;
+    --gradient-end: #8b5cf6;
+
+    /* Type tokens */
+    --font-display: 'Space Grotesk', system-ui, sans-serif;
+    --font-body: 'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+
+    /* Spacing */
+    --space-xs: 0.5rem;
+    --space-sm: 1rem;
+    --space-md: 1.5rem;
+    --space-lg: 2rem;
+    --space-xl: 3rem;
+    --space-2xl: 4rem;
+
+    /* Layout */
+    --max-width: 1200px;
+    --nav-width: 280px;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f6f8fa;
+      --bg-tertiary: #eaeef2;
+      --bg-card: #ffffff;
+      --bg-code: #f6f8fa;
+
+      --text-primary: #1f2328;
+      --text-secondary: #656d76;
+      --text-tertiary: #8b949e;
+
+      --accent-primary: #0969da;
+      --accent-secondary: #1a7f37;
+      --accent-warning: #9a6700;
+      --accent-danger: #cf222e;
+      --accent-info: #0550ae;
+
+      --border-primary: #d0d7de;
+      --border-secondary: #eaeef2;
+
+      --gradient-start: #0969da;
+      --gradient-end: #8250df;
+    }
+  }
+
+  :root[data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f6f8fa;
+    --bg-tertiary: #eaeef2;
+    --bg-card: #ffffff;
+    --bg-code: #f6f8fa;
+
+    --text-primary: #1f2328;
+    --text-secondary: #656d76;
+    --text-tertiary: #8b949e;
+
+    --accent-primary: #0969da;
+    --accent-secondary: #1a7f37;
+    --accent-warning: #9a6700;
+    --accent-danger: #cf222e;
+    --accent-info: #0550ae;
+
+    --border-primary: #d0d7de;
+    --border-secondary: #eaeef2;
+
+    --gradient-start: #0969da;
+    --gradient-end: #8250df;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 80px;
+  }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: var(--space-md);
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto;
+    height: env(safe-area-inset-top, 0px);
+    z-index: 10;
+    background: var(--bg-primary);
+  }
+
+  /* Header */
+  header {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-primary);
+    padding-block: var(--space-md);
+    z-index: 100;
+    margin-bottom: var(--space-xl);
+  }
+
+  .header-content {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-md);
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(1.5rem, 4vw, 2.5rem);
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-wrap: balance;
+  }
+
+  .subtitle {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    margin-top: 0.25rem;
+  }
+
+  .theme-toggle {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    color: var(--text-primary);
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+  }
+
+  .theme-toggle:hover {
+    background: var(--bg-card);
+    border-color: var(--accent-primary);
+  }
+
+  /* Main layout */
+  .container {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: var(--nav-width) 1fr;
+    gap: var(--space-xl);
+  }
+
+  @media (max-width: 768px) {
+    .container {
+      grid-template-columns: 1fr;
+    }
+
+    nav {
+      position: static !important;
+      max-height: none !important;
+    }
+  }
+
+  /* Navigation */
+  nav {
+    position: sticky;
+    top: 100px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    padding-right: var(--space-sm);
+  }
+
+  .nav-title {
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-sm);
+  }
+
+  .nav-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .nav-list a {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    border-left: 2px solid transparent;
+  }
+
+  .nav-list a:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border-left-color: var(--accent-primary);
+  }
+
+  .nav-list a.active {
+    background: var(--bg-tertiary);
+    color: var(--accent-primary);
+    border-left-color: var(--accent-primary);
+    font-weight: 500;
+  }
+
+  /* Main content */
+  main {
+    min-width: 0;
+  }
+
+  section {
+    margin-bottom: var(--space-2xl);
+    scroll-margin-top: 100px;
+  }
+
+  h2 {
+    font-family: var(--font-display);
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 700;
+    margin-bottom: var(--space-md);
+    color: var(--text-primary);
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-top: var(--space-lg);
+    margin-bottom: var(--space-sm);
+    color: var(--text-primary);
+  }
+
+  h4 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-top: var(--space-md);
+    margin-bottom: var(--space-xs);
+    color: var(--text-primary);
+  }
+
+  p {
+    margin-bottom: var(--space-sm);
+    color: var(--text-primary);
+  }
+
+  /* Cards */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+  }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--space-md);
+    margin: var(--space-md) 0;
+  }
+
+  .concept-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    padding: var(--space-md);
+    transition: all 0.2s;
+  }
+
+  .concept-card:hover {
+    border-color: var(--accent-primary);
+    transform: translateY(-2px);
+  }
+
+  .concept-card h4 {
+    color: var(--accent-primary);
+    margin-top: 0;
+  }
+
+  /* Code blocks */
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    padding: var(--space-md);
+    overflow-x: auto;
+    margin: var(--space-md) 0;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--bg-code);
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+  }
+
+  /* Lists */
+  ul, ol {
+    margin-left: var(--space-md);
+    margin-bottom: var(--space-sm);
+  }
+
+  li {
+    margin-bottom: 0.5rem;
+  }
+
+  /* Tables */
+  .table-wrapper {
+    overflow-x: auto;
+    margin: var(--space-md) 0;
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-card);
+  }
+
+  th {
+    background: var(--bg-secondary);
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.9rem;
+    border-bottom: 2px solid var(--border-primary);
+  }
+
+  td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-secondary);
+    font-size: 0.9rem;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  tr:hover {
+    background: var(--bg-secondary);
+  }
+
+  /* Callouts */
+  .callout {
+    border-left: 4px solid var(--accent-primary);
+    background: var(--bg-secondary);
+    padding: var(--space-md);
+    margin: var(--space-md) 0;
+    border-radius: 0 8px 8px 0;
+  }
+
+  .callout.warning {
+    border-left-color: var(--accent-warning);
+  }
+
+  .callout.danger {
+    border-left-color: var(--accent-danger);
+  }
+
+  .callout.success {
+    border-left-color: var(--accent-secondary);
+  }
+
+  .callout-title {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    padding: 0.25rem 0.625rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .badge-primary {
+    background: var(--accent-primary);
+    color: white;
+  }
+
+  .badge-success {
+    background: var(--accent-secondary);
+    color: white;
+  }
+
+  .badge-warning {
+    background: var(--accent-warning);
+    color: white;
+  }
+
+  .badge-danger {
+    background: var(--accent-danger);
+    color: white;
+  }
+
+  /* Comparison boxes */
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-md);
+    margin: var(--space-md) 0;
+  }
+
+  @media (max-width: 640px) {
+    .comparison {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .comparison-box {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    padding: var(--space-md);
+  }
+
+  .comparison-box h4 {
+    margin-top: 0;
+    color: var(--accent-primary);
+  }
+
+  /* Diagrams */
+  .diagram {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    padding: var(--space-lg);
+    margin: var(--space-md) 0;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    overflow-x: auto;
+  }
+
+  /* Hero section */
+  .hero {
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    color: white;
+    padding: var(--space-2xl);
+    border-radius: 12px;
+    margin-bottom: var(--space-xl);
+    text-align: center;
+  }
+
+  .hero h1 {
+    color: white;
+    -webkit-text-fill-color: white;
+    margin-bottom: var(--space-sm);
+  }
+
+  .hero p {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 1.1rem;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-primary);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-tertiary);
+  }
+
+  /* Print styles */
+  @media print {
+    header, nav {
+      display: none;
+    }
+
+    .container {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<header>
+  <div class="header-content">
+    <div>
+      <h1>Security at Scale</h1>
+      <p class="subtitle">Authentication & Authorization - From Fundamentals to Production</p>
+    </div>
+    <button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
+  </div>
+</header>
+
+<div class="container">
+  <nav>
+    <div class="nav-title">Contents</div>
+    <ul class="nav-list">
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#core-concepts">Core Concepts</a></li>
+      <li><a href="#real-world">Real-World Examples</a></li>
+      <li><a href="#implementation">Implementation Patterns</a></li>
+      <li><a href="#tradeoffs">Trade-offs</a></li>
+      <li><a href="#scalability">Scalability</a></li>
+      <li><a href="#failure-modes">Failure Modes</a></li>
+      <li><a href="#monitoring">Monitoring</a></li>
+      <li><a href="#testing">Testing</a></li>
+      <li><a href="#tools">Tools</a></li>
+      <li><a href="#future">Future Trends</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <section id="overview">
+      <div class="hero">
+        <h1>Authentication & Authorization at Scale</h1>
+        <p>A comprehensive guide to building secure, scalable identity systems used by billions of users worldwide</p>
+      </div>
+
+      <h2>Overview</h2>
+      <p>Modern applications handle authentication and authorization for millions to billions of users across distributed systems. This guide covers the patterns, trade-offs, and implementation strategies used by companies like Google, Meta, Amazon, and Netflix.</p>
+
+      <div class="card">
+        <h3>Key Principles</h3>
+        <ul>
+          <li><strong>Zero Trust</strong>: Never trust, always verify - every request must be authenticated and authorized</li>
+          <li><strong>Least Privilege</strong>: Grant minimum permissions necessary for each task</li>
+          <li><strong>Defense in Depth</strong>: Multiple layers of security controls</li>
+          <li><strong>Separation of Concerns</strong>: Decouple authentication from authorization</li>
+        </ul>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">Why This Matters</div>
+        <p>At scale, authentication becomes a bottleneck, authorization decisions must be consistent across services, and security breaches can affect millions of users. The patterns in this guide are battle-tested at companies handling 100,000+ auth requests per second.</p>
+      </div>
+    </section>
+
+    <section id="core-concepts">
+      <h2>Core Concepts</h2>
+
+      <div class="comparison">
+        <div class="comparison-box">
+          <h4>Authentication (AuthN)</h4>
+          <p><strong>Question:</strong> "Who are you?"</p>
+          <p>Verifying identity through credentials:</p>
+          <ul>
+            <li>Something you <strong>know</strong> (password)</li>
+            <li>Something you <strong>have</strong> (token, device)</li>
+            <li>Something you <strong>are</strong> (biometric)</li>
+          </ul>
+        </div>
+        <div class="comparison-box">
+          <h4>Authorization (AuthZ)</h4>
+          <p><strong>Question:</strong> "What can you do?"</p>
+          <p>Verifying permissions based on:</p>
+          <ul>
+            <li>Identity (who you are)</li>
+            <li>Context (where, when, how)</li>
+            <li>Resource (what you're accessing)</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Authentication Models</h3>
+
+      <div class="card-grid">
+        <div class="concept-card">
+          <h4>Session-Based</h4>
+          <p>Server creates session after login, stores session ID in cookie. Stateful - server tracks active sessions.</p>
+          <p><span class="badge badge-primary">Stateful</span></p>
+          <p><strong>Pros:</strong> Immediate revocation, server control</p>
+          <p><strong>Cons:</strong> Session store bottleneck, scaling challenges</p>
+        </div>
+
+        <div class="concept-card">
+          <h4>Token-Based (JWT)</h4>
+          <p>Server issues signed token with claims. Client sends token with each request. Stateless validation.</p>
+          <p><span class="badge badge-success">Stateless</span></p>
+          <p><strong>Pros:</strong> Scales horizontally, no session storage</p>
+          <p><strong>Cons:</strong> Cannot revoke before expiry, larger payload</p>
+        </div>
+
+        <div class="concept-card">
+          <h4>OAuth 2.0 / OIDC</h4>
+          <p>Delegated authorization with identity layer. User authenticates with provider, app receives scoped tokens.</p>
+          <p><span class="badge badge-warning">Delegated</span></p>
+          <p><strong>Pros:</strong> Industry standard, third-party integration</p>
+          <p><strong>Cons:</strong> Complex flow, redirect overhead</p>
+        </div>
+
+        <div class="concept-card">
+          <h4>API Keys</h4>
+          <p>Static secret in request header. Simple machine-to-machine authentication.</p>
+          <p><span class="badge badge-danger">Long-lived</span></p>
+          <p><strong>Pros:</strong> Simple, easy to manage</p>
+          <p><strong>Cons:</strong> No user context, security risk if compromised</p>
+        </div>
+      </div>
+
+      <h3>Authorization Models</h3>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Concept</th>
+              <th>Best For</th>
+              <th>Complexity</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>RBAC</strong></td>
+              <td>User → Role → Permission</td>
+              <td>Enterprise apps, clear hierarchies</td>
+              <td>Low</td>
+            </tr>
+            <tr>
+              <td><strong>ABAC</strong></td>
+              <td>Attributes (user, resource, environment)</td>
+              <td>Fine-grained, context-aware access</td>
+              <td>High</td>
+            </tr>
+            <tr>
+              <td><strong>PBAC</strong></td>
+              <td>Policy-as-code (OPA, Cedar)</td>
+              <td>Complex business rules, compliance</td>
+              <td>High</td>
+            </tr>
+            <tr>
+              <td><strong>ReBAC</strong></td>
+              <td>Relationships (owner, viewer, editor)</td>
+              <td>Social apps, collaborative systems</td>
+              <td>Medium</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="real-world">
+      <h2>Real-World Examples</h2>
+
+      <h3>Google: BeyondCorp & IAM</h3>
+      <div class="card">
+        <p><strong>Architecture:</strong> Zero-trust model with no VPN. Every request authenticated regardless of network location.</p>
+        <p><strong>Scale:</strong> 1.5B+ Gmail users, 100,000+ auth requests/second</p>
+        <p><strong>Key Features:</strong></p>
+        <ul>
+          <li>Context-aware access (device health, location, time)</li>
+          <li>Titan security keys for hardware-based 2FA</li>
+          <li>Hierarchical IAM: Organization → Folder → Project → Resource</li>
+          <li>Conditional policies with CEL expressions</li>
+        </ul>
+        <pre><code>// Google Cloud IAM Policy Example
+{
+  "bindings": [{
+    "role": "roles/storage.objectViewer",
+    "members": ["user:alice@example.com"],
+    "condition": {
+      "title": "IP restriction",
+      "expression": "request.origin.ip.startsWith('10.0.0.')"
+    }
+  }]
+}</code></pre>
+      </div>
+
+      <h3>Meta: Graph API & Zero-Trust</h3>
+      <div class="card">
+        <p><strong>Architecture:</strong> Internal zero-trust network with every service call authenticated.</p>
+        <p><strong>Scale:</strong> 3B+ monthly active users, billions of API calls/day</p>
+        <p><strong>Key Features:</strong></p>
+        <ul>
+          <li>Short-lived tokens (1 hour) + long-lived (60 days)</li>
+          <li>App-scoped user IDs for privacy</li>
+          <li>Granular user-consented permissions</li>
+          <li>Sub-100ms auth validation latency</li>
+        </ul>
+      </div>
+
+      <h3>Amazon: IAM & Cognito</h3>
+      <div class="card">
+        <p><strong>Architecture:</strong> Fine-grained IAM with JSON policy documents and temporary credentials.</p>
+        <p><strong>Scale:</strong> Millions of AWS accounts, trillions of API calls/year</p>
+        <p><strong>Key Features:</strong></p>
+        <ul>
+          <li>Policy evaluation in sub-millisecond</li>
+          <li>Temporary credentials via STS (15min - 1hr)</li>
+          <li>Attribute-based access control with policy variables</li>
+          <li>Cross-account access with AssumeRole</li>
+        </ul>
+        <pre><code>// AWS IAM Policy Example
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["s3:GetObject"],
+    "Resource": "arn:aws:s3:::my-bucket/*",
+    "Condition": {
+      "StringEquals": {
+        "aws:PrincipalTag/Department": "Engineering"
+      },
+      "IpAddress": {
+        "aws:SourceIp": "203.0.113.0/24"
+      }
+    }
+  }]
+}</code></pre>
+      </div>
+
+      <h3>Netflix: JWT at Scale</h3>
+      <div class="card">
+        <p><strong>Architecture:</strong> JWT for service-to-service auth with custom claims and entitlements service.</p>
+        <p><strong>Scale:</strong> 230M+ subscribers, 1,000+ microservices</p>
+        <p><strong>Key Features:</strong></p>
+        <ul>
+          <li>Custom JWT claims (country, maturity level, scope)</li>
+          <li>Centralized entitlements service</li>
+          <li>Distributed tracing for auth decisions</li>
+          <li>Cache-aside pattern for performance</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="implementation">
+      <h2>Implementation Patterns</h2>
+
+      <h3>JWT Authentication Flow</h3>
+      <pre><code>// Backend: Express.js + JWT
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+
+// Login endpoint
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+  const user = await db.users.findOne({ email });
+
+  if (!user || !await bcrypt.compare(password, user.passwordHash)) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  const token = jwt.sign(
+    { sub: user.id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h', issuer: 'auth-service' }
+  );
+
+  res.json({ accessToken: token });
+});
+
+// Auth middleware
+function authenticate(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing token' });
+  }
+
+  try {
+    const payload = jwt.verify(
+      authHeader.slice(7),
+      process.env.JWT_SECRET
+    );
+    req.user = payload;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+}</code></pre>
+
+      <h3>RBAC Authorization Middleware</h3>
+      <pre><code>const ROLES = {
+  ADMIN: 'admin',
+  EDITOR: 'editor',
+  VIEWER: 'viewer'
+};
+
+function authorize(...requiredRoles) {
+  return (req, res, next) => {
+    if (!req.user || !requiredRoles.includes(req.user.role)) {
+      return res.status(403).json({
+        error: 'Insufficient permissions'
+      });
+    }
+    next();
+  };
+}
+
+// Usage
+app.get('/api/admin/users',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  async (req, res) => {
+    const users = await db.users.find();
+    res.json(users);
+  }
+);</code></pre>
+
+      <h3>OAuth 2.0 with PKCE</h3>
+      <pre><code>// Frontend: React OAuth2 flow with PKCE
+function generateCodeVerifier() {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return btoa(String.fromCharCode(...array))
+    .replace(/[^a-zA-Z0-9]/g, '');
+}
+
+async function generateCodeChallenge(verifier) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+export function useOAuth2() {
+  const [verifier, setVerifier] = useState(null);
+
+  const initiateLogin = async () => {
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
+    setVerifier(codeVerifier);
+
+    const params = new URLSearchParams({
+      client_id: 'my-app',
+      redirect_uri: window.location.origin + '/callback',
+      response_type: 'code',
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      scope: 'openid profile email'
+    });
+
+    window.location.href =
+      `https://auth-provider.com/authorize?${params}`;
+  };
+
+  return { initiateLogin, verifier };
+}</code></pre>
+
+      <h3>Policy-Based Authorization with OPA</h3>
+      <pre><code># OPA Policy (Rego language)
+package authz
+
+default allow = false
+
+allow {
+  input.user.role == "admin"
+}
+
+allow {
+  input.user.role == "editor"
+  input.action in ["read", "write"]
+  input.resource.department == input.user.department
+}
+
+allow {
+  input.user.role == "viewer"
+  input.action == "read"
+  input.resource.visibility == "public"
+}</code></pre>
+
+      <h3>Rate Limiting</h3>
+      <pre><code>const rateLimit = require('express-rate-limit');
+const RedisStore = require('rate-limit-redis');
+
+const loginLimiter = rateLimit({
+  store: new RedisStore({
+    client: redisClient,
+    prefix: 'rl:login:'
+  }),
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts per window
+  message: {
+    error: 'Too many login attempts. Try again later.'
+  },
+  standardHeaders: true
+});
+
+app.post('/api/login', loginLimiter, handleLogin);</code></pre>
+    </section>
+
+    <section id="tradeoffs">
+      <h2>Trade-offs</h2>
+
+      <div class="card">
+        <h3>JWT vs Session-Based Authentication</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Aspect</th>
+                <th>JWT</th>
+                <th>Session</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>State</strong></td>
+                <td>Stateless</td>
+                <td>Stateful</td>
+              </tr>
+              <tr>
+                <td><strong>Scaling</strong></td>
+                <td>Horizontal, no shared state</td>
+                <td>Requires session store</td>
+              </tr>
+              <tr>
+                <td><strong>Revocation</strong></td>
+                <td>Cannot revoke before expiry</td>
+                <td>Immediate revocation</td>
+              </tr>
+              <tr>
+                <td><strong>Payload Size</strong></td>
+                <td>1-3KB (contains claims)</td>
+                <td>Session ID only</td>
+              </tr>
+              <tr>
+                <td><strong>Offline Support</strong></td>
+                <td>Yes (self-contained)</td>
+                <td>No (requires server)</td>
+              </tr>
+              <tr>
+                <td><strong>Security</strong></td>
+                <td>Token theft risk (XSS)</td>
+                <td>Session fixation risk</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>RBAC vs ABAC</h3>
+        <div class="comparison">
+          <div class="comparison-box">
+            <h4>RBAC</h4>
+            <p><strong>When to use:</strong></p>
+            <ul>
+              <li>Clear organizational hierarchy</li>
+              <li>Fixed permission sets</li>
+              <li>Simple admin/user distinction</li>
+            </ul>
+            <p><strong>Limitations:</strong></p>
+            <ul>
+              <li>Role explosion with many combinations</li>
+              <li>Cannot express resource-level permissions</li>
+              <li>Coarse-grained</li>
+            </ul>
+          </div>
+          <div class="comparison-box">
+            <h4>ABAC</h4>
+            <p><strong>When to use:</strong></p>
+            <ul>
+              <li>Complex permission logic</li>
+              <li>Context-dependent access</li>
+              <li>Fine-grained control needed</li>
+            </ul>
+            <p><strong>Limitations:</strong></p>
+            <ul>
+              <li>Complex policy management</li>
+              <li>Performance overhead</li>
+              <li>Difficult to audit</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout warning">
+        <div class="callout-title">Common Pitfalls</div>
+        <ul>
+          <li><strong>Long-lived JWT without refresh:</strong> Cannot revoke compromised tokens. Use 15-minute access tokens with refresh rotation.</li>
+          <li><strong>Storing secrets in JWT payload:</strong> Tokens are base64, not encrypted. Never put sensitive data in claims.</li>
+          <li><strong>Client-side only authorization:</strong> Always validate server-side. Client checks are for UX only.</li>
+          <li><strong>RBAC with 100+ roles:</strong> Role explosion. Switch to ABAC or simplify permission model.</li>
+          <li><strong>Missing state parameter in OAuth:</strong> Enables CSRF attacks. Always include and validate state.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="scalability">
+      <h2>Scalability</h2>
+
+      <h3>Scaling Challenges</h3>
+      <div class="card-grid">
+        <div class="concept-card">
+          <h4>1K Users</h4>
+          <p><strong>What works:</strong></p>
+          <ul>
+            <li>Simple username/password</li>
+            <li>JWT in localStorage</li>
+            <li>Single database</li>
+            <li>Basic RBAC</li>
+          </ul>
+          <p><strong>What breaks:</strong></p>
+          <ul>
+            <li>No MFA protection</li>
+            <li>No audit logging</li>
+            <li>Token revocation difficult</li>
+          </ul>
+        </div>
+
+        <div class="concept-card">
+          <h4>1M Users</h4>
+          <p><strong>What breaks:</strong></p>
+          <ul>
+            <li>Single database bottleneck</li>
+            <li>JWT secret rotation</li>
+            <li>Password hashing CPU load</li>
+            <li>Brute force attacks</li>
+          </ul>
+          <p><strong>Solutions:</strong></p>
+          <ul>
+            <li>Redis cluster for sessions</li>
+            <li>Short-lived tokens + refresh</li>
+            <li>Rate limiting at gateway</li>
+            <li>MFA implementation</li>
+          </ul>
+        </div>
+
+        <div class="concept-card">
+          <h4>1B Users</h4>
+          <p><strong>What breaks:</strong></p>
+          <ul>
+            <li>Global latency</li>
+            <li>JWT signing bottleneck</li>
+            <li>Token revocation at scale</li>
+            <li>Compliance complexity</li>
+          </ul>
+          <p><strong>Solutions:</strong></p>
+          <ul>
+            <li>Geo-distributed auth</li>
+            <li>Database sharding</li>
+            <li>Edge authentication</li>
+            <li>HSM for key management</li>
+            <li>Passwordless (WebAuthn)</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Scaling Patterns</h3>
+
+      <div class="card">
+        <h4>Distributed Session Management</h4>
+        <pre><code>// Redis cluster for session storage
+const redis = require('redis');
+const client = redis.createCluster([
+  { host: 'redis-1', port: 6379 },
+  { host: 'redis-2', port: 6379 },
+  { host: 'redis-3', port: 6379 }
+]);
+
+// Store session with 1-hour TTL
+await client.setEx(
+  `session:${sessionId}`,
+  3600,
+  JSON.stringify(sessionData)
+);
+
+// Retrieve session
+const session = await client.get(`session:${sessionId}`);
+</code></pre>
+      </div>
+
+      <div class="card">
+        <h4>Caching Authorization Decisions</h4>
+        <pre><code>// Cache permission checks
+const cache = new Map();
+
+async function checkPermission(userId, resource, action) {
+  const cacheKey = `${userId}:${resource}:${action}`;
+
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey);
+  }
+
+  const allowed = await evaluatePolicy(userId, resource, action);
+
+  // Cache for 5 minutes
+  cache.set(cacheKey, allowed);
+  setTimeout(() => cache.delete(cacheKey), 300000);
+
+  return allowed;
+}</code></pre>
+      </div>
+
+      <div class="callout success">
+        <div class="callout-title">Performance Benchmarks</div>
+        <ul>
+          <li><strong>JWT validation:</strong> 1-5ms (with cached keys)</li>
+          <li><strong>OAuth token exchange:</strong> 50-200ms</li>
+          <li><strong>Session lookup (Redis):</strong> 1-3ms</li>
+          <li><strong>Policy evaluation (OPA):</strong> &lt;1ms</li>
+          <li><strong>Database user lookup:</strong> 5-20ms (indexed)</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="failure-modes">
+      <h2>Failure Modes</h2>
+
+      <h3>Common Failure Scenarios</h3>
+
+      <div class="card">
+        <h4>1. Token/Session State Failures</h4>
+        <ul>
+          <li><strong>Token expiration race conditions:</strong> Tokens expire mid-request during high load</li>
+          <li><strong>Distributed session inconsistency:</strong> Session state diverges across auth servers</li>
+          <li><strong>Token revocation propagation delays:</strong> Revoked tokens remain valid in cache</li>
+          <li><strong>Clock skew:</strong> Time drift between servers causes validation failures</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h4>2. Infrastructure Failures</h4>
+        <ul>
+          <li><strong>Auth service unavailability:</strong> Centralized auth becomes single point of failure</li>
+          <li><strong>Database connection exhaustion:</strong> Auth DB overwhelmed during traffic spikes</li>
+          <li><strong>Cache stampede:</strong> Simultaneous cache misses overwhelm backend</li>
+          <li><strong>Network partitions:</strong> Split-brain scenarios in distributed auth</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h4>3. Security Attacks</h4>
+        <ul>
+          <li><strong>Credential stuffing:</strong> Automated attacks with breached credentials</li>
+          <li><strong>Token replay attacks:</strong> Captured tokens reused across services</li>
+          <li><strong>Session fixation:</strong> Attackers pre-set session IDs before authentication</li>
+          <li><strong>Privilege escalation:</strong> Bugs in authorization logic grant unauthorized access</li>
+        </ul>
+      </div>
+
+      <h3>Resilience Patterns</h3>
+
+      <div class="card">
+        <h4>Circuit Breaker for Auth Services</h4>
+        <pre><code>// Circuit breaker implementation
+const circuitBreaker = {
+  failures: 0,
+  lastFailureTime: 0,
+  state: 'CLOSED', // CLOSED, OPEN, HALF_OPEN
+
+  async execute(fn) {
+    if (this.state === 'OPEN') {
+      if (Date.now() - this.lastFailureTime > 30000) {
+        this.state = 'HALF_OPEN';
+      } else {
+        throw new Error('Circuit breaker open');
+      }
+    }
+
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  },
+
+  onSuccess() {
+    this.failures = 0;
+    this.state = 'CLOSED';
+  },
+
+  onFailure() {
+    this.failures++;
+    this.lastFailureTime = Date.now();
+    if (this.failures >= 5) {
+      this.state = 'OPEN';
+    }
+  }
+};</code></pre>
+      </div>
+
+      <div class="card">
+        <h4>Graceful Degradation</h4>
+        <pre><code>// Tiered authentication fallback
+async function authenticateRequest(req) {
+  try {
+    // Tier 1: Full authentication
+    return await validateToken(req.headers.authorization);
+  } catch (error) {
+    try {
+      // Tier 2: Cached authentication
+      const cached = await getCachedAuth(req.user?.id);
+      if (cached && !isExpired(cached)) {
+        return cached;
+      }
+    } catch (cacheError) {
+      // Tier 3: Read-only mode
+      if (req.method === 'GET') {
+        return { mode: 'read-only', user: null };
+      }
+    }
+
+    // Tier 4: Service unavailable
+    throw new ServiceUnavailableError('Auth service down');
+  }
+}</code></pre>
+      </div>
+
+      <div class="callout danger">
+        <div class="callout-title">Emergency Access Procedure</div>
+        <p>When complete auth system failure occurs:</p>
+        <ol>
+          <li>Activate break-glass accounts (require 2-admin approval)</li>
+          <li>Log all emergency access with detailed audit trail</li>
+          <li>Time-limit access to 1 hour maximum</li>
+          <li>Automatic revocation after timeout</li>
+          <li>Post-incident review within 24 hours</li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="monitoring">
+      <h2>Monitoring</h2>
+
+      <h3>Key Metrics</h3>
+
+      <div class="card-grid">
+        <div class="concept-card">
+          <h4>Authentication Metrics</h4>
+          <ul>
+            <li>Success rate (target: &gt;99.5%)</li>
+            <li>Failed login attempts per user/IP</li>
+            <li>Token refresh rate and failures</li>
+            <li>Session duration distribution</li>
+            <li>MFA adoption rate</li>
+            <li>Time-to-authenticate (p50/p95/p99)</li>
+          </ul>
+        </div>
+
+        <div class="concept-card">
+          <h4>Authorization Metrics</h4>
+          <ul>
+            <li>Permission denied events</li>
+            <li>Role/permission drift detection</li>
+            <li>API access pattern anomalies</li>
+            <li>Cross-tenant access attempts</li>
+            <li>Privilege escalation attempts</li>
+            <li>Policy evaluation latency</li>
+          </ul>
+        </div>
+
+        <div class="concept-card">
+          <h4>System Health</h4>
+          <ul>
+            <li>Auth service availability (99.99%)</li>
+            <li>Token validation latency (p95 &lt; 50ms)</li>
+            <li>Rate limit triggers per endpoint</li>
+            <li>Certificate expiration countdown</li>
+            <li>Secret rotation compliance</li>
+            <li>Cache hit rate (&gt;80%)</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Alerting Strategies</h3>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Condition</th>
+              <th>Response Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge badge-danger">P1 Critical</span></td>
+              <td>Auth service down or &gt;5% error rate for 2 minutes</td>
+              <td>Immediate page</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-warning">P2 High</span></td>
+              <td>Auth success rate &lt;90% or brute force detected</td>
+              <td>15 minutes</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-primary">P3 Medium</span></td>
+              <td>Latency degradation (p95 &gt;200ms)</td>
+              <td>1 hour</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-success">P4 Low</span></td>
+              <td>Cache miss rate increase, unusual patterns</td>
+              <td>Next business day</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Monitoring Architecture</h3>
+      <pre><code>// Structured logging for auth events
+function logAuthEvent(event, data) {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    level: 'INFO',
+    event: event,
+    userId: data.userId,
+    ipAddress: data.ip,
+    userAgent: data.userAgent,
+    success: data.success,
+    latency: data.latency,
+    requestId: data.requestId,
+    traceId: data.traceId
+  };
+
+  // Never log sensitive data
+  delete logEntry.password;
+  delete logEntry.token;
+
+  logger.info(JSON.stringify(logEntry));
+}
+
+// Example usage
+logAuthEvent('login_attempt', {
+  userId: user.id,
+  ip: req.ip,
+  userAgent: req.headers['user-agent'],
+  success: true,
+  latency: Date.now() - startTime,
+  requestId: req.id,
+  traceId: req.traceId
+});</code></pre>
+    </section>
+
+    <section id="testing">
+      <h2>Testing</h2>
+
+      <h3>Load Testing</h3>
+      <div class="card">
+        <h4>Testing Scenarios</h4>
+        <ul>
+          <li><strong>Spike testing:</strong> 0 to 100x traffic in 10 seconds</li>
+          <li><strong>Soak testing:</strong> 24 hours at 5x normal traffic</li>
+          <li><strong>Stress testing:</strong> Find breaking point with increasing load</li>
+          <li><strong>Mixed workload:</strong> 90% reads, 10% writes</li>
+        </ul>
+        <pre><code># k6 load test example
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+export const options = {
+  stages: [
+    { duration: '2m', target: 1000 },  // ramp up
+    { duration: '5m', target: 1000 },  // steady state
+    { duration: '2m', target: 0 },     // ramp down
+  ],
+};
+
+export default function () {
+  const res = http.post('https://api.example.com/login', {
+    email: 'user@example.com',
+    password: 'password123'
+  });
+
+  check(res, {
+    'status is 200': (r) => r.status === 200,
+    'has access token': (r) => r.json('accessToken') !== undefined
+  });
+
+  sleep(1);
+}</code></pre>
+      </div>
+
+      <h3>Chaos Engineering</h3>
+      <div class="card">
+        <h4>Failure Injection Tests</h4>
+        <ul>
+          <li><strong>Kill auth service randomly:</strong> Verify graceful degradation</li>
+          <li><strong>Inject network latency:</strong> Test timeout handling</li>
+          <li><strong>Corrupt cache:</strong> Verify fallback to database</li>
+          <li><strong>Rotate keys mid-flight:</strong> Test key rotation handling</li>
+          <li><strong>Simulate clock skew:</strong> Test token validation with time drift</li>
+          <li><strong>Flood with invalid tokens:</strong> Test rate limiting</li>
+        </ul>
+      </div>
+
+      <h3>Security Testing</h3>
+      <div class="card">
+        <h4>Penetration Testing Checklist</h4>
+        <ul>
+          <li>Attempt authentication bypass with malformed tokens</li>
+          <li>Test for IDOR (Insecure Direct Object Reference)</li>
+          <li>Verify privilege escalation is not possible</li>
+          <li>Test session fixation vulnerabilities</li>
+          <li>Attempt token replay attacks</li>
+          <li>Test for mass assignment vulnerabilities</li>
+          <li>Verify rate limiting prevents brute force</li>
+          <li>Test CSRF protection on state-changing operations</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="tools">
+      <h2>Tools</h2>
+
+      <h3>Authentication Providers</h3>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Tool</th>
+              <th>Type</th>
+              <th>Best For</th>
+              <th>Scale</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Auth0</strong></td>
+              <td>Commercial SaaS</td>
+              <td>Best developer experience, quick integration</td>
+              <td>10K-10M users</td>
+            </tr>
+            <tr>
+              <td><strong>Keycloak</strong></td>
+              <td>Open Source</td>
+              <td>Self-hosted enterprise, full SAML support</td>
+              <td>100K-10M+ users</td>
+            </tr>
+            <tr>
+              <td><strong>AWS Cognito</strong></td>
+              <td>Cloud Service</td>
+              <td>AWS ecosystem, cost-effective at scale</td>
+              <td>100K-100M+ users</td>
+            </tr>
+            <tr>
+              <td><strong>Firebase Auth</strong></td>
+              <td>Cloud Service</td>
+              <td>Mobile apps, quick startup</td>
+              <td>10K-10M users</td>
+            </tr>
+            <tr>
+              <td><strong>Okta</strong></td>
+              <td>Commercial SaaS</td>
+              <td>Enterprise SSO, workforce identity</td>
+              <td>100K-10M+ users</td>
+            </tr>
+            <tr>
+              <td><strong>Clerk</strong></td>
+              <td>Commercial SaaS</td>
+              <td>Modern DX, React/Next.js integration</td>
+              <td>10K-1M users</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Authorization Engines</h3>
+
+      <div class="card-grid">
+        <div class="concept-card">
+          <h4>Open Policy Agent (OPA)</h4>
+          <p><strong>Type:</strong> Open Source</p>
+          <p><strong>Language:</strong> Rego</p>
+          <p><strong>Best for:</strong> Policy-as-code, Kubernetes, microservices</p>
+          <p><strong>Pros:</strong> Flexible, CNCF project, wide adoption</p>
+          <p><strong>Cons:</strong> Learning curve for Rego</p>
+        </div>
+
+        <div class="concept-card">
+          <h4>Casbin</h4>
+          <p><strong>Type:</strong> Open Source</p>
+          <p><strong>Language:</strong> Multiple (Go, Java, Node.js)</p>
+          <p><strong>Best for:</strong> Embedded authorization, multi-language</p>
+          <p><strong>Pros:</strong> Lightweight, supports ACL/RBAC/ABAC</p>
+          <p><strong>Cons:</strong> Less feature-rich than OPA</p>
+        </div>
+
+        <div class="concept-card">
+          <h4>Amazon Cedar</h4>
+          <p><strong>Type:</strong> Open Source</p>
+          <p><strong>Language:</strong> Cedar policy language</p>
+          <p><strong>Best for:</strong> AWS integration, formal verification</p>
+          <p><strong>Pros:</strong> Mathematically verified, AWS-native</p>
+          <p><strong>Cons:</strong> Newer, smaller ecosystem</p>
+        </div>
+
+        <div class="concept-card">
+          <h4>Permit.io</h4>
+          <p><strong>Type:</strong> Commercial SaaS</p>
+          <p><strong>Language:</strong> Policy DSL</p>
+          <p><strong>Best for:</strong> Managed service, quick setup</p>
+          <p><strong>Pros:</strong> Hosted, UI for policy management</p>
+          <p><strong>Cons:</strong> Vendor lock-in, cost at scale</p>
+        </div>
+      </div>
+
+      <h3>Security Libraries (Node.js)</h3>
+      <pre><code>// JWT handling
+npm install jose  // Modern, RFC-compliant
+npm install jsonwebtoken  // Classic, widely used
+
+// Password hashing
+npm install bcrypt  // Industry standard
+npm install argon2  // Newer, more secure
+
+// Rate limiting
+npm install express-rate-limit
+npm install rate-limit-redis
+
+// Security headers
+npm install helmet
+
+// CORS
+npm install cors
+
+// OAuth 2.0 client
+npm install simple-oauth2</code></pre>
+    </section>
+
+    <section id="future">
+      <h2>Future Trends</h2>
+
+      <h3>2026-2027: Near-term</h3>
+      <div class="card">
+        <ul>
+          <li><strong>Passkeys become default:</strong> New applications default to FIDO2/WebAuthn, passwords become opt-in legacy</li>
+          <li><strong>OAuth 2.1 finalized:</strong> Industry-wide adoption, OAuth 2.0 flows deprecated</li>
+          <li><strong>AI-powered threat detection:</strong> Standard feature in IdPs, detecting account takeover in real-time</li>
+          <li><strong>Zero Trust maturity:</strong> Continuous verification, micro-segmentation standard for enterprise</li>
+        </ul>
+      </div>
+
+      <h3>2027-2028: Mid-term</h3>
+      <div class="card">
+        <ul>
+          <li><strong>Decentralized identity pilots:</strong> Enterprise adoption for employee credentials, supply chain</li>
+          <li><strong>Quantum-safe hybrid crypto:</strong> New systems deploy hybrid TLS, dual-signed tokens</li>
+          <li><strong>Behavioral biometrics mainstream:</strong> Continuous auth standard for financial, healthcare apps</li>
+          <li><strong>Privacy-preserving auth:</strong> Zero-knowledge proofs for age verification without data exposure</li>
+        </ul>
+      </div>
+
+      <h3>2028-2030: Long-term</h3>
+      <div class="card">
+        <ul>
+          <li><strong>Passwordless world:</strong> Passwords deprecated, legacy systems bridge to passkeys/certificates</li>
+          <li><strong>Post-quantum migration complete:</strong> Critical systems migrated to PQC, classical crypto deprecated</li>
+          <li><strong>Self-sovereign identity:</strong> Users control identity across applications, portable credentials</li>
+          <li><strong>AI vs AI security:</strong> Adversarial AI attacks met with defensive AI, continuous arms race</li>
+        </ul>
+      </div>
+
+      <h3>Emerging Technologies</h3>
+
+      <div class="card-grid">
+        <div class="concept-card">
+          <h4>Decentralized Identity (DID)</h4>
+          <p>Users control their own identity credentials without central authorities. W3C DID specification gaining traction.</p>
+          <p><strong>Impact:</strong> Reduced IdP dependency, privacy-preserving authentication, portable identity</p>
+        </div>
+
+        <div class="concept-card">
+          <h4>Quantum-Resistant Cryptography</h4>
+          <p>NIST PQC standards: CRYSTALS-Kyber (key encapsulation), CRYSTALS-Dilithium (signatures). Transition needed by 2030.</p>
+          <p><strong>Action:</strong> Inventory crypto assets, design for crypto-agility, start hybrid deployment</p>
+        </div>
+
+        <div class="concept-card">
+          <h4>Continuous Authentication</h4>
+          <p>Behavioral biometrics (keystroke dynamics, mouse patterns) for continuous verification throughout session.</p>
+          <p><strong>Benefit:</strong> Detect session hijacking mid-stream, frictionless security</p>
+        </div>
+
+        <div class="concept-card">
+          <h4>Verifiable Credentials</h4>
+          <p>Digital credentials (degrees, certifications) that can be presented cryptographically without revealing unnecessary data.</p>
+          <p><strong>Use case:</strong> Prove you're over 18 without revealing birthdate</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">Migration Checklist</div>
+        <h4>From OAuth 2.0 to 2.1:</h4>
+        <ul>
+          <li>Replace Implicit flow with Authorization Code + PKCE</li>
+          <li>Remove Resource Owner Password Credentials flow</li>
+          <li>Implement PKCE for all clients (including confidential)</li>
+          <li>Add DPoP for refresh token binding</li>
+          <li>Deploy PAR for authorization requests</li>
+          <li>Reduce access token lifetime to 15 minutes or less</li>
+          <li>Implement refresh token rotation</li>
+        </ul>
+
+        <h4>From Passwords to Passwordless:</h4>
+        <ul>
+          <li>Add FIDO2/WebAuthn support</li>
+          <li>Implement passkey enrollment flow</li>
+          <li>Design account recovery mechanism</li>
+          <li>Provide fallback for devices without biometrics</li>
+          <li>Test cross-device authentication</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="resources">
+      <h2>Resources</h2>
+
+      <h3>Official Documentation</h3>
+      <ul>
+        <li><a href="https://oauth.net/2/" target="_blank" rel="noopener">OAuth 2.0</a></li>
+        <li><a href="https://openid.net/connect/" target="_blank" rel="noopener">OpenID Connect</a></li>
+        <li><a href="https://tools.ietf.org/html/rfc7519" target="_blank" rel="noopener">JWT (RFC 7519)</a></li>
+        <li><a href="https://www.openpolicyagent.org/" target="_blank" rel="noopener">Open Policy Agent</a></li>
+        <li><a href="https://fidoalliance.org/" target="_blank" rel="noopener">FIDO Alliance</a></li>
+      </ul>
+
+      <h3>Recommended Reading</h3>
+      <ul>
+        <li>"Designing Data-Intensive Applications" by Martin Kleppmann</li>
+        <li>"OAuth 2.0 in Action" by Justin Richer and Antonio Sanso</li>
+        <li>"Zero Trust Networks" by Eric Rose and Clint Gilmore</li>
+        <li>"Identity and Data Security for Web Development" by Jonathan LeBlanc</li>
+      </ul>
+
+      <h3>Community Resources</h3>
+      <ul>
+        <li>OWASP Foundation: <a href="https://owasp.org/" target="_blank" rel="noopener">owasp.org</a></li>
+        <li>Auth0 Blog: <a href="https://auth0.com/blog/" target="_blank" rel="noopener">auth0.com/blog</a></li>
+        <li>Okta Developer Blog: <a href="https://developer.okta.com/blog/" target="_blank" rel="noopener">developer.okta.com/blog</a></li>
+      </ul>
+    </section>
+  </main>
+</div>
+
+<script>
+  // Theme toggle
+  function toggleTheme() {
+    const root = document.documentElement;
+    const currentTheme = root.getAttribute('data-theme');
+
+    if (currentTheme === 'dark') {
+      root.setAttribute('data-theme', 'light');
+      localStorage.setItem('theme', 'light');
+    } else if (currentTheme === 'light') {
+      root.removeAttribute('data-theme');
+      localStorage.setItem('theme', 'system');
+    } else {
+      root.setAttribute('data-theme', 'dark');
+      localStorage.setItem('theme', 'dark');
+    }
+  }
+
+  // Load saved theme
+  const savedTheme = localStorage.getItem('theme');
+  if (savedTheme === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else if (savedTheme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+
+  // Active nav link tracking
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('.nav-list a');
+
+  function updateActiveLink() {
+    let current = '';
+
+    sections.forEach(section => {
+      const sectionTop = section.offsetTop;
+      const sectionHeight = section.clientHeight;
+      if (scrollY >= sectionTop - 150) {
+        current = section.getAttribute('id');
+      }
+    });
+
+    navLinks.forEach(link => {
+      link.classList.remove('active');
+      if (link.getAttribute('href') === `#${current}`) {
+        link.classList.add('active');
+      }
+    });
+  }
+
+  window.addEventListener('scroll', updateActiveLink);
+  updateActiveLink();
+
+  // Smooth scroll for nav links
+  navLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const targetId = link.getAttribute('href');
+      const targetSection = document.querySelector(targetId);
+      if (targetSection) {
+        targetSection.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  });
+</script>

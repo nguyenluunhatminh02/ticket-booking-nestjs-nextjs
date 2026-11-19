@@ -1,0 +1,133 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+/lib/
+/lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.turbo/
+
+# NestJS
+*.tsbuildinfo
+coverage/
+*.log
+*.spec.ts.snap
+
+# Next.js
+.next/
+out/
+.vercel/
+.netlify/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Testing
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# ML Service models (optional - uncomment if you want to exclude model files)
+# ml-service/models/
+# ml-service/*.pkl
+# ml-service/*.h5
+# ml-service/*.pt
+# ml-service/*.pth
+
+# Playwright
+.playwright-mcp/
+
+# Misc
+*.bak
+*.backup
+*.orig
+*.rej
+*.patch

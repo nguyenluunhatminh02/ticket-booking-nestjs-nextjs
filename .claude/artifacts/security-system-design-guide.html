@@ -1,0 +1,2538 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Security System Design - Complete Mastery Guide</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --primary: #1a3a52;
+  --primary-light: #2d5a7b;
+  --accent: #d4a574;
+  --accent-dark: #b8935f;
+  --bg: #faf9f7;
+  --surface: #ffffff;
+  --text: #2c3e50;
+  --text-light: #5a6c7d;
+  --border: #e5e7eb;
+  --code-bg: #f8f9fa;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --info: #3b82f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --primary: #3b82f6;
+    --primary-light: #60a5fa;
+    --accent: #fbbf24;
+    --accent-dark: #f59e0b;
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --text: #e2e8f0;
+    --text-light: #94a3b8;
+    --border: #334155;
+    --code-bg: #0f172a;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --primary: #3b82f6;
+  --primary-light: #60a5fa;
+  --accent: #fbbf24;
+  --accent-dark: #f59e0b;
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --text: #e2e8f0;
+  --text-light: #94a3b8;
+  --border: #334155;
+  --code-bg: #0f172a;
+  color-scheme: dark;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+  font-size: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 3rem;
+  padding-block: 3rem;
+}
+
+@media (max-width: 900px) {
+  .container {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}
+
+nav {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  height: fit-content;
+  max-height: calc(100vh - env(safe-area-inset-top, 0px) * 2);
+  overflow-y: auto;
+  padding: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+@media (max-width: 900px) {
+  nav {
+    position: static;
+    max-height: none;
+  }
+}
+
+nav h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--primary);
+}
+
+nav ul {
+  list-style: none;
+}
+
+nav li {
+  margin-bottom: 0.5rem;
+}
+
+nav a {
+  color: var(--text-light);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: color 0.2s;
+  display: block;
+  padding: 0.25rem 0;
+}
+
+nav a:hover {
+  color: var(--primary);
+}
+
+nav a.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+main {
+  min-width: 0;
+}
+
+header {
+  margin-bottom: 3rem;
+  padding-bottom: 2rem;
+  border-bottom: 2px solid var(--border);
+}
+
+h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1.2;
+  margin-bottom: 1rem;
+  text-wrap: balance;
+}
+
+.subtitle {
+  font-size: 1.25rem;
+  color: var(--text-light);
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+section {
+  margin-bottom: 4rem;
+  scroll-margin-top: 2rem;
+}
+
+h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 3px solid var(--accent);
+  text-wrap: balance;
+}
+
+h3 {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 2rem 0 1rem;
+}
+
+h4 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--primary-light);
+  margin: 1.5rem 0 0.75rem;
+}
+
+p {
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+ul, ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+
+li {
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+code {
+  font-family: 'Courier New', monospace;
+  background: var(--code-bg);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: var(--primary);
+}
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.card h4 {
+  margin-top: 0;
+  color: var(--primary);
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-success {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warning);
+}
+
+.badge-error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+}
+
+.badge-info {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--info);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  font-size: 0.9rem;
+  overflow-x: auto;
+  display: block;
+}
+
+thead {
+  background: var(--primary);
+  color: white;
+}
+
+th {
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+}
+
+td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+tbody tr:hover {
+  background: var(--code-bg);
+}
+
+.highlight-box {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  color: white;
+  padding: 1.5rem;
+  border-radius: 12px;
+  margin: 1.5rem 0;
+}
+
+.highlight-box h4 {
+  color: white;
+  margin-top: 0;
+}
+
+.highlight-box ul {
+  color: white;
+}
+
+.scale-indicator {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+}
+
+.scale-basic { background: var(--success); }
+.scale-intermediate { background: var(--warning); }
+.scale-advanced { background: var(--error); }
+
+.timeline {
+  position: relative;
+  padding-left: 2rem;
+  margin: 2rem 0;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+
+.timeline-item {
+  position: relative;
+  margin-bottom: 2rem;
+}
+
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -2.5rem;
+  top: 0.5rem;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--bg);
+}
+
+.comparison-table {
+  font-size: 0.85rem;
+}
+
+.comparison-table th {
+  font-size: 0.8rem;
+  padding: 0.5rem;
+}
+
+.comparison-table td {
+  padding: 0.5rem;
+  vertical-align: top;
+}
+
+footer {
+  margin-top: 4rem;
+  padding-top: 2rem;
+  border-top: 2px solid var(--border);
+  text-align: center;
+  color: var(--text-light);
+  font-size: 0.875rem;
+}
+
+.theme-toggle {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  transition: all 0.2s;
+  z-index: 100;
+}
+
+.theme-toggle:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+}
+
+.theme-toggle svg {
+  width: 24px;
+  height: 24px;
+  fill: var(--primary);
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <nav>
+    <h2>Contents</h2>
+    <ul>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#fundamentals">Security Fundamentals</a></li>
+      <li><a href="#authentication">Authentication</a></li>
+      <li><a href="#authorization">Authorization</a></li>
+      <li><a href="#encryption">Encryption & Cryptography</a></li>
+      <li><a href="#network-security">Network Security</a></li>
+      <li><a href="#web-security">Web Application Security</a></li>
+      <li><a href="#api-security">API Security</a></li>
+      <li><a href="#data-protection">Data Protection</a></li>
+      <li><a href="#secrets-management">Secrets Management</a></li>
+      <li><a href="#infrastructure-security">Infrastructure Security</a></li>
+      <li><a href="#compliance">Compliance & Auditing</a></li>
+      <li><a href="#threat-modeling">Threat Modeling</a></li>
+      <li><a href="#incident-response">Incident Response</a></li>
+      <li><a href="#advanced-topics">Advanced Topics</a></li>
+      <li><a href="#real-world">Real-World Examples</a></li>
+      <li><a href="#tools">Tools & Technologies</a></li>
+      <li><a href="#future">Future Trends</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <header>
+      <h1>Security System Design</h1>
+      <p class="subtitle">A comprehensive guide from fundamentals to advanced security architecture for modern distributed systems</p>
+    </header>
+
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>Security in system design is not an afterthought—it's a foundational architectural concern that must be woven into every layer of your system. This guide covers the complete spectrum of security considerations, from basic principles to advanced threat modeling and incident response.</p>
+
+      <div class="highlight-box">
+        <h4>Core Security Principles</h4>
+        <ul>
+          <li><strong>Zero Trust:</strong> Never trust, always verify—every request must be authenticated and authorized</li>
+          <li><strong>Defense in Depth:</strong> Multiple layers of security controls to prevent single points of failure</li>
+          <li><strong>Least Privilege:</strong> Grant only the minimum permissions necessary for each component</li>
+          <li><strong>Assume Breach:</strong> Design systems assuming attackers are already inside the network</li>
+          <li><strong>Fail Secure:</strong> When systems fail, they should default to a secure state</li>
+        </ul>
+      </div>
+
+      <h3>Security Learning Path</h3>
+      <div class="grid-3">
+        <div class="card">
+          <h4><span class="badge badge-success">Basic</span> Foundation</h4>
+          <ul>
+            <li>Authentication fundamentals</li>
+            <li>Password hashing & storage</li>
+            <li>HTTPS/TLS basics</li>
+            <li>Input validation</li>
+            <li>SQL injection prevention</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4><span class="badge badge-warning">Intermediate</span> Architecture</h4>
+          <ul>
+            <li>OAuth 2.0 & OpenID Connect</li>
+            <li>JWT token management</li>
+            <li>API security patterns</li>
+            <li>Encryption at rest/transit</li>
+            <li>Network segmentation</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4><span class="badge badge-error">Advanced</span> Enterprise</h4>
+          <ul>
+            <li>Zero Trust Architecture</li>
+            <li>Threat modeling (STRIDE)</li>
+            <li>Compliance frameworks</li>
+            <li>Incident response</li>
+            <li>Security automation</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="fundamentals">
+      <h2>Security Fundamentals</h2>
+
+      <h3>The CIA Triad</h3>
+      <p>The foundation of all security design rests on three pillars:</p>
+
+      <div class="grid-3">
+        <div class="card">
+          <h4>Confidentiality</h4>
+          <p>Ensure data is accessible only to authorized parties.</p>
+          <ul>
+            <li>Encryption (at rest and in transit)</li>
+            <li>Access controls</li>
+            <li>Data classification</li>
+            <li>Secure communication channels</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Integrity</h4>
+          <p>Ensure data cannot be modified by unauthorized parties.</p>
+          <ul>
+            <li>Digital signatures</li>
+            <li>Hash verification</li>
+            <li>Checksums</li>
+            <li>Audit logging</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Availability</h4>
+          <p>Ensure systems and data are accessible when needed.</p>
+          <ul>
+            <li>Redundancy</li>
+            <li>DDoS protection</li>
+            <li>Disaster recovery</li>
+            <li>Rate limiting</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Authentication vs Authorization</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>Authentication (AuthN)</th>
+            <th>Authorization (AuthZ)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Question</strong></td>
+            <td>Who are you?</td>
+            <td>What can you do?</td>
+          </tr>
+          <tr>
+            <td><strong>Purpose</strong></td>
+            <td>Verify identity</td>
+            <td>Verify permissions</td>
+          </tr>
+          <tr>
+            <td><strong>Timing</strong></td>
+            <td>First (login)</td>
+            <td>After authentication</td>
+          </tr>
+          <tr>
+            <td><strong>Examples</strong></td>
+            <td>Passwords, MFA, biometrics</td>
+            <td>RBAC, ABAC, ACLs</td>
+          </tr>
+          <tr>
+            <td><strong>Failure</strong></td>
+            <td>Access denied (401)</td>
+            <td>Forbidden (403)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Security by Design Principles</h3>
+      <ol>
+        <li><strong>Economy of Mechanism:</strong> Keep security designs simple and small</li>
+        <li><strong>Fail-Safe Defaults:</strong> Base access decisions on permission rather than exclusion</li>
+        <li><strong>Complete Mediation:</strong> Check every access to every object, not just at entry</li>
+        <li><strong>Open Design:</strong> Security should not depend on secrecy of design (Kerckhoffs's principle)</li>
+        <li><strong>Separation of Privilege:</strong> Require multiple conditions for access</li>
+        <li><strong>Least Common Mechanism:</strong> Minimize shared resources</li>
+        <li><strong>Least Privilege:</strong> Every program and user should operate with minimal privileges</li>
+      </ol>
+    </section>
+
+    <section id="authentication">
+      <h2>Authentication</h2>
+
+      <h3>Authentication Methods</h3>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>Something You Know</h4>
+          <ul>
+            <li><strong>Passwords:</strong> Must be hashed with bcrypt/scrypt/Argon2</li>
+            <li><strong>PINs:</strong> Short numeric codes</li>
+            <li><strong>Security Questions:</strong> Weak, easily guessable</li>
+          </ul>
+          <p><strong>Strengths:</strong> Simple, familiar</p>
+          <p><strong>Weaknesses:</strong> Phishing, brute force, credential stuffing</p>
+        </div>
+        <div class="card">
+          <h4>Something You Have</h4>
+          <ul>
+            <li><strong>TOTP:</strong> Time-based one-time passwords (Google Authenticator)</li>
+            <li><strong>Hardware Tokens:</strong> YubiKey, FIDO2 devices</li>
+            <li><strong>SMS Codes:</strong> Vulnerable to SIM swapping</li>
+          </ul>
+          <p><strong>Strengths:</strong> Resistant to phishing</p>
+          <p><strong>Weaknesses:</strong> Device loss, SIM swapping (SMS)</p>
+        </div>
+        <div class="card">
+          <h4>Something You Are</h4>
+          <ul>
+            <li><strong>Fingerprint:</strong> Touch ID, Android fingerprint</li>
+            <li><strong>Face Recognition:</strong> Face ID, Windows Hello</li>
+            <li><strong>Iris Scan:</strong> High security applications</li>
+          </ul>
+          <p><strong>Strengths:</strong> Convenient, hard to forge</p>
+          <p><strong>Weaknesses:</strong> Privacy concerns, false positives</p>
+        </div>
+        <div class="card">
+          <h4>Passwordless / FIDO2</h4>
+          <ul>
+            <li><strong>WebAuthn:</strong> W3C standard for passwordless auth</li>
+            <li><strong>Passkeys:</strong> Platform authenticators (iCloud, Google)</li>
+            <li><strong>Biometric + Device:</strong> Combined factors</li>
+          </ul>
+          <p><strong>Strengths:</strong> Phishing-resistant, user-friendly</p>
+          <p><strong>Weaknesses:</strong> Device dependency, adoption</p>
+        </div>
+      </div>
+
+      <h3>Multi-Factor Authentication (MFA)</h3>
+      <p>Combining two or more authentication factors dramatically increases security:</p>
+
+      <pre><code>// MFA implementation example
+async function authenticateWithMFA(username, password, totpCode) {
+  // Step 1: Verify password
+  const user = await findUser(username);
+  const passwordValid = await bcrypt.compare(password, user.passwordHash);
+
+  if (!passwordValid) {
+    throw new AuthenticationError('Invalid credentials');
+  }
+
+  // Step 2: Verify TOTP
+  const totpValid = verifyTOTP(user.totpSecret, totpCode);
+
+  if (!totpValid) {
+    throw new AuthenticationError('Invalid MFA code');
+  }
+
+  // Step 3: Check for suspicious activity
+  const riskScore = await assessRisk(user, requestContext);
+  if (riskScore > THRESHOLD) {
+    await challengeUser(user, 'additional_verification');
+  }
+
+  // Step 4: Issue session
+  return createSession(user);
+}</code></pre>
+
+      <h3>Password Storage Best Practices</h3>
+      <div class="card">
+        <h4>Never Store Passwords in Plaintext</h4>
+        <pre><code>// WRONG - Never do this
+const user = {
+  username: 'alice',
+  password: 'mysecretpassword123' // NEVER STORE LIKE THIS
+};
+
+// RIGHT - Use bcrypt with salt rounds
+const bcrypt = require('bcrypt');
+const SALT_ROUNDS = 12;
+
+async function hashPassword(password) {
+  const salt = await bcrypt.genSalt(SALT_ROUNDS);
+  return bcrypt.hash(password, salt);
+}
+
+async function verifyPassword(password, hash) {
+  return bcrypt.compare(password, hash);
+}</code></pre>
+      </div>
+
+      <h3>Session Management</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>Best Practice</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Session ID Generation</strong></td>
+            <td>Use cryptographically secure random generator (256-bit minimum)</td>
+          </tr>
+          <tr>
+            <td><strong>Session Storage</strong></td>
+            <td>Server-side (Redis, database) with secure cookies</td>
+          </tr>
+          <tr>
+            <td><strong>Session Timeout</strong></td>
+            <td>Absolute timeout (8-24h) + idle timeout (15-30min)</td>
+          </tr>
+          <tr>
+            <td><strong>Session Fixation</strong></td>
+            <td>Regenerate session ID after authentication</td>
+          </tr>
+          <tr>
+            <td><strong>Secure Cookies</strong></td>
+            <td>HttpOnly, Secure, SameSite=Strict</td>
+          </tr>
+          <tr>
+            <td><strong>Concurrent Sessions</strong></td>
+            <td>Limit active sessions per user, allow revocation</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="authorization">
+      <h2>Authorization</h2>
+
+      <h3>Authorization Models</h3>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>Role-Based Access Control (RBAC)</h4>
+          <p>Permissions assigned to roles, users assigned to roles.</p>
+          <pre><code>// RBAC example
+const roles = {
+  admin: ['user:read', 'user:write', 'user:delete'],
+  editor: ['user:read', 'user:write'],
+  viewer: ['user:read']
+};
+
+function hasPermission(user, permission) {
+  const userRoles = getUserRoles(user.id);
+  return userRoles.some(role =>
+    roles[role]?.includes(permission)
+  );
+}</code></pre>
+          <p><strong>Pros:</strong> Simple, scalable, easy to manage</p>
+          <p><strong>Cons:</strong> Role explosion, coarse-grained</p>
+        </div>
+        <div class="card">
+          <h4>Attribute-Based Access Control (ABAC)</h4>
+          <p>Permissions based on attributes of user, resource, action, and context.</p>
+          <pre><code>// ABAC policy example
+const policy = {
+  effect: 'allow',
+  condition: {
+    all: [
+      { fact: 'user.department', operator: 'equals', value: 'finance' },
+      { fact: 'resource.classification', operator: 'in', value: ['public', 'internal'] },
+      { fact: 'environment.time', operator: 'between', value: ['09:00', '17:00'] }
+    ]
+  }
+};</code></pre>
+          <p><strong>Pros:</strong> Fine-grained, flexible, context-aware</p>
+          <p><strong>Cons:</strong> Complex, harder to audit</p>
+        </div>
+        <div class="card">
+          <h4>Relationship-Based Access Control (ReBAC)</h4>
+          <p>Permissions based on relationships between subjects and resources.</p>
+          <pre><code>// ReBAC example (like Google Zanzibar)
+const relationships = [
+  { subject: 'user:alice', relation: 'owner', resource: 'doc:123' },
+  { subject: 'user:bob', relation: 'viewer', resource: 'doc:123' },
+  { subject: 'group:engineering', relation: 'member', resource: 'project:abc' }
+];
+
+function canAccess(userId, action, resourceId) {
+  // Check direct relationships and transitive ones
+  return checkRelationship(userId, action, resourceId);
+}</code></pre>
+          <p><strong>Pros:</strong> Intuitive, handles complex hierarchies</p>
+          <p><strong>Cons:</strong> Requires relationship database</p>
+        </div>
+        <div class="card">
+          <h4>Policy-Based Access Control (PBAC)</h4>
+          <p>Centralized policies written in declarative languages.</p>
+          <pre><code>// Open Policy Agent (OPA) policy
+package authz
+
+default allow = false
+
+allow {
+  input.user.role == "admin"
+}
+
+allow {
+  input.user.id == input.resource.owner_id
+  input.action == "read"
+}
+
+allow {
+  input.user.department == input.resource.department
+  input.resource.visibility == "internal"
+}</code></pre>
+          <p><strong>Pros:</strong> Centralized, auditable, version-controlled</p>
+          <p><strong>Cons:</strong> Learning curve, policy management</p>
+        </div>
+      </div>
+
+      <h3>Choosing the Right Model</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Scenario</th>
+            <th>Recommended Model</th>
+            <th>Why</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Simple SaaS with user tiers</td>
+            <td>RBAC</td>
+            <td>Easy to implement and understand</td>
+          </tr>
+          <tr>
+            <td>Enterprise with complex rules</td>
+            <td>ABAC or PBAC</td>
+            <td>Handles time, location, classification</td>
+          </tr>
+          <tr>
+            <td>Collaborative documents (Google Docs)</td>
+            <td>ReBAC</td>
+            <td>Natural fit for ownership/sharing</td>
+          </tr>
+          <tr>
+            <td>Multi-tenant platform</td>
+            <td>ABAC + RBAC hybrid</td>
+            <td>Tenant isolation + role management</td>
+          </tr>
+          <tr>
+            <td>Microservices architecture</td>
+            <td>PBAC (OPA)</td>
+            <td>Centralized policy, distributed enforcement</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="encryption">
+      <h2>Encryption & Cryptography</h2>
+
+      <h3>Encryption Types</h3>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>Symmetric Encryption</h4>
+          <p>Same key for encryption and decryption.</p>
+          <ul>
+            <li><strong>AES-256:</strong> Industry standard, fast</li>
+            <li><strong>Use cases:</strong> Data at rest, bulk encryption</li>
+            <li><strong>Key management:</strong> Must securely distribute keys</li>
+          </ul>
+          <pre><code>const crypto = require('crypto');
+
+function encrypt(text, key) {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+
+  return {
+    iv: iv.toString('hex'),
+    encrypted,
+    tag: cipher.getAuthTag().toString('hex')
+  };
+}</code></pre>
+        </div>
+        <div class="card">
+          <h4>Asymmetric Encryption</h4>
+          <p>Different keys for encryption and decryption (public/private key pair).</p>
+          <ul>
+            <li><strong>RSA:</strong> 2048+ bits, widely supported</li>
+            <li><strong>ECC:</strong> Smaller keys, faster (secp256k1, P-256)</li>
+            <li><strong>Use cases:</strong> Key exchange, digital signatures, TLS</li>
+          </ul>
+          <pre><code>const { generateKeyPairSync } = require('crypto');
+
+const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+  modulusLength: 4096,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+});</code></pre>
+        </div>
+      </div>
+
+      <h3>Hashing vs Encryption</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>Hashing</th>
+            <th>Encryption</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Purpose</strong></td>
+            <td>Verify data integrity, store passwords</td>
+            <td>Protect confidentiality</td>
+          </tr>
+          <tr>
+            <td><strong>Reversibility</strong></td>
+            <td>One-way (cannot reverse)</td>
+            <td>Two-way (can decrypt with key)</td>
+          </tr>
+          <tr>
+            <td><strong>Output</strong></td>
+            <td>Fixed-length hash</td>
+            <td>Variable-length ciphertext</td>
+          </tr>
+          <tr>
+            <td><strong>Use Cases</strong></td>
+            <td>Passwords, file checksums, digital signatures</td>
+            <td>Sensitive data, communication</td>
+          </tr>
+          <tr>
+            <td><strong>Algorithms</strong></td>
+            <td>bcrypt, Argon2, SHA-256</td>
+            <td>AES, RSA, ECC</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Encryption at Rest</h3>
+      <div class="card">
+        <h4>Database Encryption</h4>
+        <pre><code>-- PostgreSQL with pgcrypto
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  ssn_encrypted BYTEA, -- Encrypted sensitive data
+  ssn_iv BYTEA, -- Initialization vector
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Encrypt before insert
+INSERT INTO users (email, ssn_encrypted, ssn_iv)
+VALUES (
+  'alice@example.com',
+  pgp_sym_encrypt('123-45-6789', 'encryption_key'),
+  decode('random_iv_hex', 'hex')
+);
+
+-- Decrypt on read
+SELECT
+  email,
+  pgp_sym_decrypt(ssn_encrypted, 'encryption_key') as ssn
+FROM users
+WHERE id = 1;</code></pre>
+      </div>
+
+      <h3>Encryption in Transit</h3>
+      <div class="card">
+        <h4>TLS Configuration</h4>
+        <pre><code># Nginx TLS configuration
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+ssl_prefer_server_ciphers off;
+
+# HSTS (HTTP Strict Transport Security)
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+# Certificate pinning (optional)
+add_header Public-Key-Pins 'pin-sha256="base64=="; max-age=5184000; includeSubDomains';</code></pre>
+      </div>
+
+      <h3>Key Management</h3>
+      <div class="highlight-box">
+        <h4>Key Management Best Practices</h4>
+        <ul>
+          <li><strong>Never hardcode keys:</strong> Use environment variables or secrets managers</li>
+          <li><strong>Rotate keys regularly:</strong> Automated rotation every 90 days</li>
+          <li><strong>Use key hierarchy:</strong> Master keys encrypt data keys (envelope encryption)</li>
+          <li><strong>Hardware Security Modules (HSM):</strong> For high-security applications</li>
+          <li><strong>Key separation:</strong> Different keys for different purposes (encryption, signing)</li>
+          <li><strong>Audit key usage:</strong> Log all key access and operations</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="network-security">
+      <h2>Network Security</h2>
+
+      <h3>Network Segmentation</h3>
+      <p>Divide your network into isolated zones to limit blast radius of breaches:</p>
+
+      <div class="card">
+        <h4>Typical Network Zones</h4>
+        <pre><code>Internet
+    ↓
+[DMZ / Public Zone]
+  - Load balancers
+  - CDN
+  - Web servers (public-facing)
+    ↓
+[Application Zone]
+  - API servers
+  - Microservices
+  - Message queues
+    ↓
+[Data Zone]
+  - Databases
+  - Cache (Redis)
+  - Object storage
+    ↓
+[Management Zone]
+  - Monitoring
+  - Logging
+  - Admin tools</code></pre>
+      </div>
+
+      <h3>Firewall Rules</h3>
+      <pre><code># AWS Security Group example
+# Web server - allow HTTP/HTTPS from internet
+{
+  "IpProtocol": "tcp",
+  "FromPort": 443,
+  "ToPort": 443,
+  "IpRanges": [{"CidrIp": "0.0.0.0/0"}]
+}
+
+# Application server - allow traffic only from web servers
+{
+  "IpProtocol": "tcp",
+  "FromPort": 8080,
+  "ToPort": 8080,
+  "SourceSecurityGroupId": "web-sg-id"
+}
+
+# Database - allow traffic only from app servers
+{
+  "IpProtocol": "tcp",
+  "FromPort": 5432,
+  "ToPort": 5432,
+  "SourceSecurityGroupId": "app-sg-id"
+}</code></pre>
+
+      <h3>DDoS Protection</h3>
+      <div class="grid-2">
+        <div class="card">
+          <h4>Layer 3/4 Protection</h4>
+          <ul>
+            <li><strong>Anycast:</strong> Distribute traffic across global PoPs</li>
+            <li><strong>Scrubbing centers:</strong> Filter malicious traffic</li>
+            <li><strong>Rate limiting:</strong> Per-IP connection limits</li>
+            <li><strong>SYN cookies:</strong> Prevent SYN flood attacks</li>
+          </ul>
+          <p><strong>Providers:</strong> Cloudflare, AWS Shield, Akamai</p>
+        </div>
+        <div class="card">
+          <h4>Layer 7 Protection</h4>
+          <ul>
+            <li><strong>WAF:</strong> Web Application Firewall rules</li>
+            <li><strong>Bot detection:</strong> Challenge-response, behavioral analysis</li>
+            <li><strong>Rate limiting:</strong> Per-endpoint, per-user limits</li>
+            <li><strong>Geo-blocking:</strong> Restrict by country/region</li>
+          </ul>
+          <p><strong>Tools:</strong> ModSecurity, AWS WAF, Cloudflare WAF</p>
+        </div>
+      </div>
+
+      <h3>VPN & Zero Trust Networking</h3>
+      <pre><code>// Zero Trust network access pattern
+async function authorizeNetworkAccess(userId, resourceId, context) {
+  // 1. Verify device posture
+  const deviceTrusted = await checkDeviceCompliance(context.deviceId);
+  if (!deviceTrusted) {
+    throw new Error('Device not compliant');
+  }
+
+  // 2. Verify user identity (continuous authentication)
+  const userVerified = await verifyUserSession(userId, context);
+  if (!userVerified) {
+    throw new Error('User verification failed');
+  }
+
+  // 3. Check resource access policy
+  const allowed = await evaluatePolicy({
+    subject: userId,
+    action: 'access',
+    resource: resourceId,
+    context: context
+  });
+
+  if (!allowed) {
+    throw new Error('Access denied');
+  }
+
+  // 4. Establish microsegmented connection
+  return establishSecureTunnel(userId, resourceId);
+}</code></pre>
+    </section>
+
+    <section id="web-security">
+      <h2>Web Application Security</h2>
+
+      <h3>Common Vulnerabilities (OWASP Top 10)</h3>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>1. Injection (SQL, NoSQL, OS)</h4>
+          <p><strong>Attack:</strong> Inject malicious code through user input</p>
+          <pre><code>// VULNERABLE
+const query = `SELECT * FROM users WHERE id = ${userId}`;
+
+// SECURE - Use parameterized queries
+const query = 'SELECT * FROM users WHERE id = $1';
+await db.query(query, [userId]);</code></pre>
+        </div>
+        <div class="card">
+          <h4>2. Broken Authentication</h4>
+          <p><strong>Attack:</strong> Exploit weak authentication mechanisms</p>
+          <ul>
+            <li>Weak passwords, no MFA</li>
+            <li>Session fixation</li>
+            <li>Credential stuffing</li>
+            <li>Exposed session tokens</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>3. Sensitive Data Exposure</h4>
+          <p><strong>Attack:</strong> Access unencrypted sensitive data</p>
+          <ul>
+            <li>Store passwords in plaintext</li>
+            <li>Transmit data over HTTP</li>
+            <li>Log sensitive information</li>
+            <li>Expose data in error messages</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>4. XML External Entities (XXE)</h4>
+          <p><strong>Attack:</strong> Process malicious XML input</p>
+          <pre><code>// VULNERABLE
+const parser = new DOMParser();
+const doc = parser.parseFromString(xmlInput, 'text/xml');
+
+// SECURE - Disable external entities
+const parser = new DOMParser();
+parser.parseFromString(xmlInput, 'text/xml', {
+  noent: false,
+  dtd: false
+});</code></pre>
+        </div>
+        <div class="card">
+          <h4>5. Broken Access Control</h4>
+          <p><strong>Attack:</strong> Access unauthorized resources</p>
+          <ul>
+            <li>IDOR (Insecure Direct Object Reference)</li>
+            <li>Privilege escalation</li>
+            <li>Missing function-level access control</li>
+            <li>CORS misconfiguration</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>6. Security Misconfiguration</h4>
+          <p><strong>Attack:</strong> Exploit default settings, open cloud storage</p>
+          <ul>
+            <li>Default credentials</li>
+            <li>Unnecessary features enabled</li>
+            <li>Verbose error messages</li>
+            <li>Missing security headers</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>7. Cross-Site Scripting (XSS)</h4>
+          <p><strong>Attack:</strong> Inject malicious scripts into web pages</p>
+          <pre><code>// VULNERABLE
+element.innerHTML = userInput;
+
+// SECURE - Escape output
+element.textContent = userInput;
+
+// Or use CSP headers
+// Content-Security-Policy: default-src 'self'</code></pre>
+        </div>
+        <div class="card">
+          <h4>8. Insecure Deserialization</h4>
+          <p><strong>Attack:</strong> Execute arbitrary code via malicious serialized data</p>
+          <pre><code>// VULNERABLE
+const data = JSON.parse(userInput); // Can execute code
+
+// SECURE - Validate schema
+const schema = Joi.object({ name: Joi.string() });
+const { error, value } = schema.validate(userInput);
+if (error) throw new Error('Invalid input');</code></pre>
+        </div>
+        <div class="card">
+          <h4>9. Using Components with Known Vulnerabilities</h4>
+          <p><strong>Attack:</strong> Exploit outdated libraries</p>
+          <ul>
+            <li>Run <code>npm audit</code> regularly</li>
+            <li>Use Dependabot/Renovate for updates</li>
+            <li>Monitor CVE databases</li>
+            <li>Remove unused dependencies</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>10. Insufficient Logging & Monitoring</h4>
+          <p><strong>Attack:</strong> Breaches go undetected</p>
+          <ul>
+            <li>Log authentication attempts</li>
+            <li>Monitor for anomalies</li>
+            <li>Set up alerts for suspicious activity</li>
+            <li>Retain logs for forensic analysis</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Security Headers</h3>
+      <pre><code>// Express.js security headers
+const helmet = require('helmet');
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: true,
+  crossOriginOpenerPolicy: true,
+  crossOriginResourcePolicy: { policy: "same-site" },
+  dnsPrefetchControl: { allow: false },
+  frameguard: { action: "deny" },
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+  noSniff: true,
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  xssFilter: true,
+}));</code></pre>
+    </section>
+
+    <section id="api-security">
+      <h2>API Security</h2>
+
+      <h3>API Authentication Methods</h3>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>API Keys</h4>
+          <p>Simple token passed in header or query parameter.</p>
+          <pre><code>// Request with API key
+fetch('/api/data', {
+  headers: {
+    'X-API-Key': 'your-api-key-here'
+  }
+});</code></pre>
+          <p><strong>Pros:</strong> Simple, easy to implement</p>
+          <p><strong>Cons:</strong> No user context, key leakage risk</p>
+          <p><strong>Use for:</strong> Server-to-server, public APIs</p>
+        </div>
+        <div class="card">
+          <h4>JWT (JSON Web Tokens)</h4>
+          <p>Signed tokens containing user claims.</p>
+          <pre><code>// JWT structure
+{
+  "header": { "alg": "HS256", "typ": "JWT" },
+  "payload": {
+    "sub": "user123",
+    "name": "Alice",
+    "role": "admin",
+    "exp": 1234567890
+  },
+  "signature": "HMACSHA256(...)"
+}</code></pre>
+          <p><strong>Pros:</strong> Stateless, scalable</p>
+          <p><strong>Cons:</strong> Cannot revoke easily, token size</p>
+          <p><strong>Use for:</strong> Stateless APIs, microservices</p>
+        </div>
+        <div class="card">
+          <h4>OAuth 2.0</h4>
+          <p>Delegated authorization framework.</p>
+          <pre><code>// OAuth 2.0 Authorization Code Flow
+// 1. Redirect to authorization server
+res.redirect('https://auth.example.com/authorize?' +
+  'client_id=YOUR_CLIENT_ID&' +
+  'redirect_uri=YOUR_REDIRECT_URI&' +
+  'response_type=code&' +
+  'scope=read write');
+
+// 2. Exchange code for token
+const response = await fetch('https://auth.example.com/token', {
+  method: 'POST',
+  body: new URLSearchParams({
+    grant_type: 'authorization_code',
+    code: authorizationCode,
+    client_id: CLIENT_ID,
+    client_secret: CLIENT_SECRET
+  })
+});</code></pre>
+          <p><strong>Pros:</strong> Industry standard, delegated access</p>
+          <p><strong>Cons:</strong> Complex implementation</p>
+          <p><strong>Use for:</strong> Third-party integrations, SSO</p>
+        </div>
+        <div class="card">
+          <h4>mTLS (Mutual TLS)</h4>
+          <p>Both client and server present certificates.</p>
+          <pre><code>// Nginx mTLS configuration
+server {
+  listen 443 ssl;
+
+  ssl_certificate /path/to/server.crt;
+  ssl_certificate_key /path/to/server.key;
+
+  ssl_client_certificate /path/to/ca.crt;
+  ssl_verify_client on;
+
+  location / {
+    proxy_pass http://backend;
+  }
+}</code></pre>
+          <p><strong>Pros:</strong> Strong authentication, encrypted</p>
+          <p><strong>Cons:</strong> Certificate management overhead</p>
+          <p><strong>Use for:</strong> Service-to-service, high-security APIs</p>
+        </div>
+      </div>
+
+      <h3>API Rate Limiting</h3>
+      <pre><code>// Express rate limiting with Redis
+const rateLimit = require('express-rate-limit');
+const RedisStore = require('rate-limit-redis');
+const Redis = require('ioredis');
+
+const redis = new Redis(process.env.REDIS_URL);
+
+const limiter = rateLimit({
+  store: new RedisStore({
+    sendCommand: (...args) => redis.call(...args),
+  }),
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too many requests, please try again later.'
+  },
+  keyGenerator: (req) => {
+    // Rate limit by API key or IP
+    return req.headers['x-api-key'] || req.ip;
+  }
+});
+
+app.use('/api/', limiter);</code></pre>
+
+      <h3>API Security Checklist</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th>Check</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Authentication</strong></td>
+            <td>All endpoints require authentication (except public ones)</td>
+          </tr>
+          <tr>
+            <td><strong>Authorization</strong></td>
+            <td>Check permissions on every request</td>
+          </tr>
+          <tr>
+            <td><strong>Input Validation</strong></td>
+            <td>Validate all inputs with schema (Joi, Zod)</td>
+          </tr>
+          <tr>
+            <td><strong>Rate Limiting</strong></td>
+            <td>Implement per-user and per-IP limits</td>
+          </tr>
+          <tr>
+            <td><strong>HTTPS Only</strong></td>
+            <td>Enforce TLS 1.2+, redirect HTTP to HTTPS</td>
+          </tr>
+          <tr>
+            <td><strong>CORS</strong></td>
+            <td>Restrict to specific origins, no wildcards in production</td>
+          </tr>
+          <tr>
+            <td><strong>Error Handling</strong></td>
+            <td>Generic error messages, no stack traces</td>
+          </tr>
+          <tr>
+            <td><strong>Logging</strong></td>
+            <td>Log all API calls with user context</td>
+          </tr>
+          <tr>
+            <td><strong>Versioning</strong></td>
+            <td>Support multiple versions, deprecate old ones</td>
+          </tr>
+          <tr>
+            <td><strong>Monitoring</strong></td>
+            <td>Track anomalies, set up alerts</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="data-protection">
+      <h2>Data Protection</h2>
+
+      <h3>Data Classification</h3>
+      <div class="grid-2">
+        <div class="card">
+          <h4><span class="badge badge-error">Critical</span> Highly Sensitive</h4>
+          <ul>
+            <li>PII (Social Security numbers, passport numbers)</li>
+            <li>Financial data (credit cards, bank accounts)</li>
+            <li>Health records (PHI)</li>
+            <li>Authentication credentials</li>
+            <li>Encryption keys</li>
+          </ul>
+          <p><strong>Protection:</strong> Strong encryption, strict access controls, audit logging</p>
+        </div>
+        <div class="card">
+          <h4><span class="badge badge-warning">Sensitive</span> Confidential</h4>
+          <ul>
+            <li>Personal information (name, email, address)</li>
+            <li>Business records</li>
+            <li>Internal communications</li>
+            <li>Proprietary data</li>
+          </ul>
+          <p><strong>Protection:</strong> Encryption at rest, access logging</p>
+        </div>
+        <div class="card">
+          <h4><span class="badge badge-info">Internal</span> Internal Use</h4>
+          <ul>
+            <li>Company policies</li>
+            <li>Internal documentation</li>
+            <li>Non-sensitive business data</li>
+          </ul>
+          <p><strong>Protection:</strong> Internal access only</p>
+        </div>
+        <div class="card">
+          <h4><span class="badge badge-success">Public</span> Public</h4>
+          <ul>
+            <li>Marketing materials</li>
+            <li>Public documentation</li>
+            <li>Press releases</li>
+          </ul>
+          <p><strong>Protection:</strong> Integrity verification</p>
+        </div>
+      </div>
+
+      <h3>Data Masking & Tokenization</h3>
+      <pre><code>// Data masking example
+function maskCreditCard(cardNumber) {
+  // Show only last 4 digits
+  return '****-****-****-' + cardNumber.slice(-4);
+}
+
+function maskEmail(email) {
+  const [local, domain] = email.split('@');
+  const maskedLocal = local[0] + '***' + local.slice(-1);
+  return `${maskedLocal}@${domain}`;
+}
+
+// Tokenization - replace sensitive data with non-sensitive token
+const tokenStore = new Map();
+
+function tokenize(data) {
+  const token = crypto.randomBytes(16).toString('hex');
+  tokenStore.set(token, data);
+  return token;
+}
+
+function detokenize(token) {
+  return tokenStore.get(token);
+}</code></pre>
+
+      <h3>Backup & Recovery</h3>
+      <div class="highlight-box">
+        <h4>3-2-1 Backup Strategy</h4>
+        <ul>
+          <li><strong>3 copies:</strong> Original + 2 backups</li>
+          <li><strong>2 different media:</strong> Disk + tape, or cloud + on-premise</li>
+          <li><strong>1 offsite:</strong> Geographic separation for disaster recovery</li>
+        </ul>
+      </div>
+
+      <pre><code># Automated backup with encryption
+#!/bin/bash
+
+BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/backups"
+ENCRYPTED_BACKUP="${BACKUP_DIR}/backup_${BACKUP_DATE}.tar.gz.gpg"
+
+# Create backup
+tar -czf - /var/lib/postgresql/data | \
+  gpg --encrypt --recipient "backup@example.com" > "${ENCRYPTED_BACKUP}"
+
+# Upload to S3 with encryption
+aws s3 cp "${ENCRYPTED_BACKUP}" s3://company-backups/db/ \
+  --sse AES256
+
+# Verify backup integrity
+gpg --decrypt "${ENCRYPTED_BACKUP}" | tar -tzf - > /dev/null
+
+# Retention policy - keep 30 days
+find ${BACKUP_DIR} -name "backup_*.tar.gz.gpg" -mtime +30 -delete</code></pre>
+    </section>
+
+    <section id="secrets-management">
+      <h2>Secrets Management</h2>
+
+      <h3>What Are Secrets?</h3>
+      <ul>
+        <li>API keys and tokens</li>
+        <li>Database credentials</li>
+        <li>Encryption keys</li>
+        <li>SSL/TLS certificates</li>
+        <li>OAuth client secrets</li>
+        <li>SSH keys</li>
+      </ul>
+
+      <h3>Secrets Management Solutions</h3>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>HashiCorp Vault</h4>
+          <p>Enterprise-grade secrets management with dynamic secrets.</p>
+          <pre><code># Store a secret
+vault kv put secret/my-app/database \
+  username="admin" \
+  password="supersecret"
+
+# Retrieve a secret
+vault kv get secret/my-app/database
+
+# Dynamic database credentials
+vault write database/creds/my-role \
+  format=json</code></pre>
+          <p><strong>Features:</strong> Dynamic secrets, encryption as a service, audit logging</p>
+        </div>
+        <div class="card">
+          <h4>AWS Secrets Manager</h4>
+          <p>Managed service with automatic rotation.</p>
+          <pre><code># AWS CLI
+aws secretsmanager create-secret \
+  --name MyDatabaseSecret \
+  --secret-string '{"username":"admin","password":"secret"}'
+
+# Retrieve in application
+const AWS = require('aws-sdk');
+const secretsManager = new AWS.SecretsManager();
+
+const data = await secretsManager.getSecretValue({
+  SecretId: 'MyDatabaseSecret'
+}).promise();
+
+const secret = JSON.parse(data.SecretString);</code></pre>
+          <p><strong>Features:</strong> Automatic rotation, IAM integration, CloudTrail logging</p>
+        </div>
+      </div>
+
+      <h3>Environment Variables vs Secrets Managers</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>Environment Variables</th>
+            <th>Secrets Manager</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Security</strong></td>
+            <td>Low (visible in process list, logs)</td>
+            <td>High (encrypted, access-controlled)</td>
+          </tr>
+          <tr>
+            <td><strong>Rotation</strong></td>
+            <td>Manual (requires redeployment)</td>
+            <td>Automatic</td>
+          </tr>
+          <tr>
+            <td><strong>Audit</strong></td>
+            <td>None</td>
+            <td>Full audit trail</td>
+          </tr>
+          <tr>
+            <td><strong>Complexity</strong></td>
+            <td>Simple</td>
+            <td>Moderate (requires integration)</td>
+          </tr>
+          <tr>
+            <td><strong>Cost</strong></td>
+            <td>Free</td>
+            <td>Paid service</td>
+          </tr>
+          <tr>
+            <td><strong>Use Case</strong></td>
+            <td>Non-sensitive config</td>
+            <td>Credentials, keys, certificates</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Secrets Best Practices</h3>
+      <div class="card">
+        <h4>Do's and Don'ts</h4>
+        <ul>
+          <li><strong>DO:</strong> Use secrets managers for all credentials</li>
+          <li><strong>DO:</strong> Rotate secrets regularly (90 days)</li>
+          <li><strong>DO:</strong> Use different secrets per environment</li>
+          <li><strong>DO:</strong> Audit secret access</li>
+          <li><strong>DO:</strong> Use short-lived credentials when possible</li>
+          <li><strong>DON'T:</strong> Commit secrets to git (use .gitignore)</li>
+          <li><strong>DON'T:</strong> Log secrets (sanitize logs)</li>
+          <li><strong>DON'T:</strong> Share secrets via email/chat</li>
+          <li><strong>DON'T:</strong> Hardcode secrets in application code</li>
+          <li><strong>DON'T:</strong> Use default credentials</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="infrastructure-security">
+      <h2>Infrastructure Security</h2>
+
+      <h3>Container Security</h3>
+      <pre><code># Docker security best practices
+
+# 1. Use specific image versions, not 'latest'
+FROM node:18.17.0-alpine
+
+# 2. Run as non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+USER nodejs
+
+# 3. Minimize attack surface
+RUN apk --no-cache add curl && \
+    rm -rf /var/cache/apk/*
+
+# 4. Use .dockerignore
+# node_modules
+# npm-debug.log
+# .env
+# .git
+
+# 5. Scan images for vulnerabilities
+# docker scan myapp:latest
+
+# 6. Read-only filesystem
+# docker run --read-only --tmpfs /tmp myapp</code></pre>
+
+      <h3>Kubernetes Security</h3>
+      <pre><code># Pod Security Standards
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 2000
+  containers:
+  - name: app
+    image: myapp:1.0.0
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+    resources:
+      limits:
+        memory: "128Mi"
+        cpu: "500m"
+
+---
+# Network Policy - restrict traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+---
+# RBAC - limit permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: default
+  name: pod-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]</code></pre>
+
+      <h3>Cloud Security</h3>
+      <div class="grid-2">
+        <div class="card">
+          <h4>AWS Security</h4>
+          <ul>
+            <li><strong>IAM:</strong> Least privilege, MFA, role-based access</li>
+            <li><strong>VPC:</strong> Private subnets, security groups, NACLs</li>
+            <li><strong>KMS:</strong> Encryption key management</li>
+            <li><strong>GuardDuty:</strong> Threat detection</li>
+            <li><strong>Security Hub:</strong> Centralized security findings</li>
+            <li><strong>CloudTrail:</strong> API audit logging</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>General Cloud Security</h4>
+          <ul>
+            <li><strong>Shared responsibility:</strong> Understand your vs provider's role</li>
+            <li><strong>Identity:</strong> Strong IAM, no root account usage</li>
+            <li><strong>Network:</strong> Private by default, public only when needed</li>
+            <li><strong>Data:</strong> Encrypt at rest and in transit</li>
+            <li><strong>Monitoring:</strong> Enable all logging, set up alerts</li>
+            <li><strong>Compliance:</strong> Use compliance frameworks (CIS, NIST)</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="compliance">
+      <h2>Compliance & Auditing</h2>
+
+      <h3>Major Compliance Frameworks</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Framework</th>
+            <th>Industry</th>
+            <th>Key Requirements</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>SOC 2</strong></td>
+            <td>SaaS, Cloud</td>
+            <td>Security, availability, processing integrity, confidentiality, privacy</td>
+          </tr>
+          <tr>
+            <td><strong>HIPAA</strong></td>
+            <td>Healthcare</td>
+            <td>PHI protection, access controls, audit logs, breach notification</td>
+          </tr>
+          <tr>
+            <td><strong>PCI DSS</strong></td>
+            <td>Payment</td>
+            <td>Cardholder data protection, encryption, access control, monitoring</td>
+          </tr>
+          <tr>
+            <td><strong>GDPR</strong></td>
+            <td>EU Data</td>
+            <td>Data protection, consent, right to erasure, data portability</td>
+          </tr>
+          <tr>
+            <td><strong>ISO 27001</strong></td>
+            <td>General</td>
+            <td>Information security management system (ISMS)</td>
+          </tr>
+          <tr>
+            <td><strong>FedRAMP</strong></td>
+            <td>US Government</td>
+            <td>Cloud security assessment, continuous monitoring</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Audit Logging</h3>
+      <pre><code>// Structured audit log example
+const auditLog = {
+  timestamp: new Date().toISOString(),
+  eventId: crypto.randomUUID(),
+  actor: {
+    type: 'user',
+    id: 'user_123',
+    email: 'alice@example.com',
+    ipAddress: '203.0.113.42',
+    userAgent: 'Mozilla/5.0...'
+  },
+  action: 'data.update',
+  resource: {
+    type: 'patient_record',
+    id: 'record_456',
+    name: 'Medical History'
+  },
+  outcome: 'success',
+  details: {
+    before: { status: 'pending' },
+    after: { status: 'approved' },
+    reason: 'Physician authorization'
+  },
+  metadata: {
+    requestId: 'req_789',
+    correlationId: 'corr_abc',
+    version: '1.0'
+  }
+};
+
+// Send to audit log service
+await auditService.log(auditLog);</code></pre>
+
+      <h3>Compliance Checklist</h3>
+      <div class="card">
+        <h4>General Compliance Requirements</h4>
+        <ul>
+          <li><strong>Access Controls:</strong> Role-based access, MFA, least privilege</li>
+          <li><strong>Audit Logging:</strong> Log all access to sensitive data</li>
+          <li><strong>Encryption:</strong> Data at rest and in transit</li>
+          <li><strong>Data Retention:</strong> Defined retention policies, secure deletion</li>
+          <li><strong>Incident Response:</strong> Documented procedures, breach notification</li>
+          <li><strong>Employee Training:</strong> Security awareness training</li>
+          <li><strong>Vendor Management:</strong> Assess third-party security</li>
+          <li><strong>Regular Audits:</strong> Internal and external audits</li>
+          <li><strong>Risk Assessment:</strong> Regular risk assessments</li>
+          <li><strong>Business Continuity:</strong> Disaster recovery plans</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="threat-modeling">
+      <h2>Threat Modeling</h2>
+
+      <h3>STRIDE Methodology</h3>
+      <div class="grid-2">
+        <div class="card">
+          <h4>S - Spoofing</h4>
+          <p><strong>Threat:</strong> Pretending to be someone/something else</p>
+          <p><strong>Example:</strong> Identity theft, fake authentication</p>
+          <p><strong>Mitigation:</strong> Strong authentication, MFA, certificates</p>
+        </div>
+        <div class="card">
+          <h4>T - Tampering</h4>
+          <p><strong>Threat:</strong> Modifying data or code without authorization</p>
+          <p><strong>Example:</strong> Man-in-the-middle, database manipulation</p>
+          <p><strong>Mitigation:</strong> Integrity checks, digital signatures, checksums</p>
+        </div>
+        <div class="card">
+          <h4>R - Repudiation</h4>
+          <p><strong>Threat:</strong> Denying having performed an action</p>
+          <p><strong>Example:</strong> Denying a transaction, false alibis</p>
+          <p><strong>Mitigation:</strong> Audit logging, digital signatures, timestamps</p>
+        </div>
+        <div class="card">
+          <h4>I - Information Disclosure</h4>
+          <p><strong>Threat:</strong> Exposing information to unauthorized parties</p>
+          <p><strong>Example:</strong> Data breaches, eavesdropping</p>
+          <p><strong>Mitigation:</strong> Encryption, access controls, data masking</p>
+        </div>
+        <div class="card">
+          <h4>D - Denial of Service</h4>
+          <p><strong>Threat:</strong> Making a system unavailable to legitimate users</p>
+          <p><strong>Example:</strong> DDoS attacks, resource exhaustion</p>
+          <p><strong>Mitigation:</strong> Rate limiting, redundancy, auto-scaling</p>
+        </div>
+        <div class="card">
+          <h4>E - Elevation of Privilege</h4>
+          <p><strong>Threat:</strong> Gaining unauthorized capabilities</p>
+          <p><strong>Example:</strong> Buffer overflow, privilege escalation</p>
+          <p><strong>Mitigation:</strong> Least privilege, input validation, sandboxing</p>
+        </div>
+      </div>
+
+      <h3>Threat Modeling Process</h3>
+      <div class="timeline">
+        <div class="timeline-item">
+          <h4>1. Define Scope</h4>
+          <p>Identify the system, data flows, trust boundaries, and assets to protect.</p>
+        </div>
+        <div class="timeline-item">
+          <h4>2. Identify Threats</h4>
+          <p>Use STRIDE or similar framework to systematically identify threats.</p>
+        </div>
+        <div class="timeline-item">
+          <h4>3. Assess Risk</h4>
+          <p>Evaluate likelihood and impact of each threat (risk = likelihood × impact).</p>
+        </div>
+        <div class="timeline-item">
+          <h4>4. Define Mitigations</h4>
+          <p>Design controls to address each threat (eliminate, mitigate, transfer, accept).</p>
+        </div>
+        <div class="timeline-item">
+          <h4>5. Validate</h4>
+          <p>Review threat model with stakeholders, update as system evolves.</p>
+        </div>
+      </div>
+
+      <h3>Attack Trees</h3>
+      <pre><code>Goal: Steal user credentials
+├── Phishing attack
+│   ├── Send fake login page
+│   ├── Email with malicious link
+│   └── SMS with fake verification
+├── Brute force
+│   ├── Guess weak passwords
+│   ├── Credential stuffing
+│   └── Dictionary attack
+├── Man-in-the-middle
+│   ├── ARP spoofing
+│   ├── SSL stripping
+│   └── Rogue WiFi
+└── Malware
+    ├── Keylogger
+    ├── Screen capture
+    └── Browser extension</code></pre>
+    </section>
+
+    <section id="incident-response">
+      <h2>Incident Response</h2>
+
+      <h3>Incident Response Plan</h3>
+      <div class="grid-2">
+        <div class="card">
+          <h4>Phase 1: Preparation</h4>
+          <ul>
+            <li>Define incident response team</li>
+            <li>Establish communication channels</li>
+            <li>Document procedures</li>
+            <li>Train team members</li>
+            <li>Set up monitoring and alerting</li>
+            <li>Conduct tabletop exercises</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Phase 2: Detection & Analysis</h4>
+          <ul>
+            <li>Identify potential security incident</li>
+            <li>Validate the incident</li>
+            <li>Determine scope and impact</li>
+            <li>Classify severity (P1-P4)</li>
+            <li>Document timeline</li>
+            <li>Preserve evidence</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Phase 3: Containment</h4>
+          <ul>
+            <li>Short-term containment (isolate affected systems)</li>
+            <li>Long-term containment (apply patches, change credentials)</li>
+            <li>Eradicate threat (remove malware, close vulnerabilities)</li>
+            <li>Communicate with stakeholders</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Phase 4: Recovery</h4>
+          <ul>
+            <li>Restore systems from clean backups</li>
+            <li>Verify systems are clean</li>
+            <li>Gradually restore service</li>
+            <li>Monitor for recurrence</li>
+            <li>Validate functionality</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Phase 5: Post-Incident</h4>
+          <ul>
+            <li>Conduct lessons learned meeting</li>
+            <li>Document what happened</li>
+            <li>Identify improvements</li>
+            <li>Update policies and procedures</li>
+            <li>File regulatory reports if required</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Incident Severity Levels</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Level</th>
+            <th>Description</th>
+            <th>Response Time</th>
+            <th>Example</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge badge-error">P1 - Critical</span></td>
+            <td>Active breach, data exfiltration, complete service outage</td>
+            <td>Immediate (15 min)</td>
+            <td>Ransomware, mass data breach</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-warning">P2 - High</span></td>
+            <td>Partial service degradation, potential data exposure</td>
+            <td>1 hour</td>
+            <td>DDoS attack, compromised admin account</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-info">P3 - Medium</span></td>
+            <td>Security vulnerability discovered, no active exploitation</td>
+            <td>4 hours</td>
+            <td>CVE in dependency, suspicious login attempts</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-success">P4 - Low</span></td>
+            <td>Minor security issue, policy violation</td>
+            <td>24 hours</td>
+            <td>Weak password, missing MFA</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Forensic Investigation</h3>
+      <pre><code># Preserve evidence
+# 1. Capture volatile data first
+sudo tcpdump -i any -w network_capture.pcap
+sudo ps auxf > processes.txt
+sudo netstat -tulnp > connections.txt
+sudo lsof > open_files.txt
+
+# 2. Capture memory
+sudo avml memory.dump
+
+# 3. Capture disk image
+sudo dd if=/dev/sda of=disk_image.img bs=4M status=progress
+
+# 4. Calculate hashes
+echo "SHA256 hashes:" > hashes.txt
+sha256sum memory.dump >> hashes.txt
+sha256sum disk_image.img >> hashes.txt
+sha256sum network_capture.pcap >> hashes.txt
+
+# 5. Maintain chain of custody
+# Document who accessed evidence, when, and why
+# Store in secure, access-controlled location</code></pre>
+    </section>
+
+    <section id="advanced-topics">
+      <h2>Advanced Security Topics</h2>
+
+      <h3>Zero Trust Architecture</h3>
+      <div class="highlight-box">
+        <h4>Zero Trust Principles</h4>
+        <ul>
+          <li><strong>Never trust, always verify:</strong> Every access request must be authenticated and authorized</li>
+          <li><strong>Assume breach:</strong> Design systems assuming attackers are already inside</li>
+          <li><strong>Least privilege:</strong> Grant minimum necessary access</li>
+          <li><strong>Microsegmentation:</strong> Isolate workloads to limit blast radius</li>
+          <li><strong>Continuous validation:</strong> Re-verify trust throughout session</li>
+        </ul>
+      </div>
+
+      <pre><code>// Zero Trust access evaluation
+async function evaluateAccess(request) {
+  const context = {
+    user: await authenticateUser(request),
+    device: await verifyDevice(request),
+    network: await assessNetwork(request),
+    resource: await getResource(request),
+    action: request.action,
+    time: new Date(),
+    location: request.geoLocation
+  };
+
+  // Continuous risk assessment
+  const riskScore = calculateRisk(context);
+
+  if (riskScore > HIGH_RISK_THRESHOLD) {
+    await challengeUser(context.user, 'step_up_auth');
+  }
+
+  // Policy evaluation
+  const allowed = await evaluatePolicy({
+    subject: context.user,
+    action: context.action,
+    resource: context.resource,
+    context: context
+  });
+
+  if (!allowed) {
+    await logAccessDenied(context);
+    throw new AccessDeniedError();
+  }
+
+  // Establish short-lived session
+  return createSession(context, { ttl: '5m' });
+}</code></pre>
+
+      <h3>Security Automation (DevSecOps)</h3>
+      <pre><code># CI/CD Security Pipeline
+
+# 1. Pre-commit hooks
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    hooks:
+      - id: detect-private-key
+      - id: check-yaml
+  - repo: https://github.com/PyCQA/bandit
+    hooks:
+      - id: bandit  # Python security linter
+
+# 2. SAST (Static Application Security Testing)
+# Run in CI
+semgrep --config=auto --json --output=results.json
+
+# 3. Dependency scanning
+npm audit --json > audit-results.json
+snyk test --json > snyk-results.json
+
+# 4. Container scanning
+trivy image --exit-code 1 --severity HIGH,CRITICAL myapp:latest
+
+# 5. Secret scanning
+gitleaks detect --source . --verbose
+
+# 6. Infrastructure as Code scanning
+checkov -d terraform/ --quiet
+
+# 7. DAST (Dynamic Application Security Testing)
+# Run against staging environment
+zap-baseline.py -t https://staging.example.com</code></pre>
+
+      <h3>Privacy-Enhancing Technologies</h3>
+      <div class="grid-2">
+        <div class="card">
+          <h4>Differential Privacy</h4>
+          <p>Add noise to data to protect individual privacy while maintaining statistical utility.</p>
+          <pre><code>// Add Laplace noise for differential privacy
+function addNoise(value, sensitivity, epsilon) {
+  const scale = sensitivity / epsilon;
+  const noise = laplaceDistribution(scale);
+  return value + noise;
+}</code></pre>
+        </div>
+        <div class="card">
+          <h4>Homomorphic Encryption</h4>
+          <p>Perform computations on encrypted data without decrypting it.</p>
+          <p><strong>Use case:</strong> Privacy-preserving machine learning, secure cloud computing</p>
+          <p><strong>Limitation:</strong> Computationally expensive</p>
+        </div>
+        <div class="card">
+          <h4>Secure Multi-Party Computation</h4>
+          <p>Multiple parties compute a function over their inputs while keeping them private.</p>
+          <p><strong>Use case:</strong> Collaborative analytics, privacy-preserving auctions</p>
+        </div>
+        <div class="card">
+          <h4>Trusted Execution Environments (TEE)</h4>
+          <p>Hardware-based isolation for sensitive computations (Intel SGX, ARM TrustZone).</p>
+          <p><strong>Use case:</strong> DRM, secure enclaves, blockchain</p>
+        </div>
+      </div>
+
+      <h3>Blockchain & Decentralized Identity</h3>
+      <pre><code>// Verifiable Credentials (W3C standard)
+const verifiableCredential = {
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1"
+  ],
+  "type": ["VerifiableCredential", "UniversityDegreeCredential"],
+  "issuer": "did:example:123",
+  "issuanceDate": "2026-11-13T10:00:00Z",
+  "credentialSubject": {
+    "id": "did:example:456",
+    "degree": {
+      "type": "BachelorDegree",
+      "name": "Bachelor of Science"
+    }
+  },
+  "proof": {
+    "type": "Ed25519Signature2018",
+    "created": "2026-11-13T10:00:00Z",
+    "verificationMethod": "did:example:123#key-1",
+    "proofPurpose": "assertionMethod",
+    "jws": "eyJhbGciOiJFZERTQSJ9.."
+  }
+};</code></pre>
+    </section>
+
+    <section id="real-world">
+      <h2>Real-World Examples</h2>
+
+      <h3>Google BeyondCorp</h3>
+      <div class="card">
+        <h4>Zero Trust at Scale</h4>
+        <ul>
+          <li><strong>Challenge:</strong> 100,000+ employees, global workforce, no VPN</li>
+          <li><strong>Solution:</strong> Zero Trust architecture with identity-aware proxy</li>
+          <li><strong>Key Features:</strong></li>
+          <ul>
+            <li>Every access request authenticated and authorized</li>
+            <li>Device trust based on compliance state</li>
+            <li>Context-aware access (location, time, behavior)</li>
+            <li>Microsegmented network</li>
+          </ul>
+          <li><strong>Results:</strong> Improved security, better user experience, reduced IT costs</li>
+        </ul>
+      </div>
+
+      <h3>Netflix Security Architecture</h3>
+      <div class="card">
+        <h4>Cloud-Native Security</h4>
+        <ul>
+          <li><strong>Challenge:</strong> 200M+ subscribers, global streaming, microservices</li>
+          <li><strong>Solution:</strong> Defense in depth with automation</li>
+          <li><strong>Key Features:</strong></li>
+          <ul>
+            <li>Automated security testing in CI/CD</li>
+            <li>Runtime security with Falco</li>
+            <li>Secrets management with custom solution</li>
+            <li>Chaos engineering for resilience</li>
+          </ul>
+          <li><strong>Results:</strong> 99.99% availability, rapid incident response</li>
+        </ul>
+      </div>
+
+      <h3>Stripe Payment Security</h3>
+      <div class="card">
+        <h4>PCI DSS Level 1 Compliance</h4>
+        <ul>
+          <li><strong>Challenge:</strong> Process billions in payments, global compliance</li>
+          <li><strong>Solution:</strong> Security-first architecture</li>
+          <li><strong>Key Features:</strong></li>
+          <ul>
+            <li>Tokenization of card data</li>
+            <li>End-to-end encryption</li>
+            <li>Network segmentation</li>
+            <li>Continuous monitoring and alerting</li>
+            <li>Regular penetration testing</li>
+          </ul>
+          <li><strong>Results:</strong> Zero major breaches, industry-leading security</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="tools">
+      <h2>Tools & Technologies</h2>
+
+      <h3>Security Testing Tools</h3>
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Tool</th>
+            <th>Type</th>
+            <th>Use Case</th>
+            <th>Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>OWASP ZAP</strong></td>
+            <td>DAST</td>
+            <td>Web application scanning</td>
+            <td>Free</td>
+          </tr>
+          <tr>
+            <td><strong>Burp Suite</strong></td>
+            <td>DAST</td>
+            <td>Professional web app testing</td>
+            <td>$449/year</td>
+          </tr>
+          <tr>
+            <td><strong>Semgrep</strong></td>
+            <td>SAST</td>
+            <td>Static code analysis</td>
+            <td>Free / Enterprise</td>
+          </tr>
+          <tr>
+            <td><strong>SonarQube</strong></td>
+            <td>SAST</td>
+            <td>Code quality and security</td>
+            <td>Free / Enterprise</td>
+          </tr>
+          <tr>
+            <td><strong>Trivy</strong></td>
+            <td>Container</td>
+            <td>Container image scanning</td>
+            <td>Free</td>
+          </tr>
+          <tr>
+            <td><strong>Snyk</strong></td>
+            <td>SCA</td>
+            <td>Dependency vulnerability scanning</td>
+            <td>Free / Paid</td>
+          </tr>
+          <tr>
+            <td><strong>Metasploit</strong></td>
+            <td>Pentest</td>
+            <td>Penetration testing framework</td>
+            <td>Free / Pro</td>
+          </tr>
+          <tr>
+            <td><strong>Nmap</strong></td>
+            <td>Network</td>
+            <td>Network discovery and scanning</td>
+            <td>Free</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Monitoring & SIEM</h3>
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Tool</th>
+            <th>Type</th>
+            <th>Best For</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Splunk</strong></td>
+            <td>SIEM</td>
+            <td>Enterprise log management and analysis</td>
+          </tr>
+          <tr>
+            <td><strong>Elastic Security</strong></td>
+            <td>SIEM</td>
+            <td>Open-source security analytics</td>
+          </tr>
+          <tr>
+            <td><strong>Datadog</strong></td>
+            <td>APM + Security</td>
+            <td>Cloud-native monitoring</td>
+          </tr>
+          <tr>
+            <td><strong>Prometheus + Grafana</strong></td>
+            <td>Monitoring</td>
+            <td>Metrics and alerting</td>
+          </tr>
+          <tr>
+            <td><strong>Falco</strong></td>
+            <td>Runtime Security</td>
+            <td>Kubernetes runtime threat detection</td>
+          </tr>
+          <tr>
+            <td><strong>OSSEC</strong></td>
+            <td>HIDS</td>
+            <td>Host-based intrusion detection</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Identity & Access Management</h3>
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Tool</th>
+            <th>Type</th>
+            <th>Features</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Okta</strong></td>
+            <td>IAM</td>
+            <td>SSO, MFA, lifecycle management</td>
+          </tr>
+          <tr>
+            <td><strong>Auth0</strong></td>
+            <td>IAM</td>
+            <td>API authentication, social login</td>
+          </tr>
+          <tr>
+            <td><strong>Keycloak</strong></td>
+            <td>IAM</td>
+            <td>Open-source IAM, SSO</td>
+          </tr>
+          <tr>
+            <td><strong>AWS Cognito</strong></td>
+            <td>IAM</td>
+            <td>User pools, identity pools</td>
+          </tr>
+          <tr>
+            <td><strong>HashiCorp Vault</strong></td>
+            <td>Secrets</td>
+            <td>Secrets management, encryption</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="future">
+      <h2>Future Trends</h2>
+
+      <h3>Emerging Technologies</h3>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>Post-Quantum Cryptography</h4>
+          <p>Quantum computers will break current encryption (RSA, ECC). NIST is standardizing quantum-resistant algorithms.</p>
+          <ul>
+            <li><strong>Algorithms:</strong> CRYSTALS-Kyber, CRYSTALS-Dilithium</li>
+            <li><strong>Timeline:</strong> Migration needed by 2030</li>
+            <li><strong>Action:</strong> Start inventorying cryptographic assets</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>AI-Powered Security</h4>
+          <p>Machine learning for threat detection, automated response, and adversarial AI.</p>
+          <ul>
+            <li><strong>Defensive AI:</strong> Anomaly detection, behavioral analysis</li>
+            <li><strong>Offensive AI:</strong> AI-generated phishing, deepfakes</li>
+            <li><strong>Challenge:</strong> AI vs AI arms race</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Passwordless Authentication</h4>
+          <p>FIDO2/WebAuthn replacing passwords with cryptographic keys and biometrics.</p>
+          <ul>
+            <li><strong>Passkeys:</strong> Platform authenticators (iCloud, Google)</li>
+            <li><strong>Benefits:</strong> Phishing-resistant, user-friendly</li>
+            <li><strong>Adoption:</strong> Growing rapidly (Apple, Google, Microsoft)</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Confidential Computing</h4>
+          <p>Protecting data in use with hardware-based isolation (TEEs).</p>
+          <ul>
+            <li><strong>Technologies:</strong> Intel SGX, AMD SEV, ARM CCA</li>
+            <li><strong>Use cases:</strong> Multi-party computation, secure AI</li>
+            <li><strong>Cloud:</strong> Azure Confidential VMs, AWS Nitro Enclaves</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Security in 2026 and Beyond</h3>
+      <div class="timeline">
+        <div class="timeline-item">
+          <h4>Zero Trust Becomes Standard</h4>
+          <p>Every organization adopts Zero Trust principles. Network perimeters disappear completely.</p>
+        </div>
+        <div class="timeline-item">
+          <h4>AI-Driven Security Operations</h4>
+          <p>Automated threat detection and response. Security analysts focus on strategy, not alerts.</p>
+        </div>
+        <div class="timeline-item">
+          <h4>Supply Chain Security</h4>
+          <p>Software bills of materials (SBOM) mandatory. Continuous verification of dependencies.</p>
+        </div>
+        <div class="timeline-item">
+          <h4>Privacy-First Design</h4>
+          <p>Privacy-enhancing technologies become mainstream. Data minimization by default.</p>
+        </div>
+        <div class="timeline-item">
+          <h4>Quantum-Safe Migration</h4>
+          <p>Organizations begin migrating to post-quantum cryptography ahead of quantum computing threats.</p>
+        </div>
+      </div>
+
+      <h3>Continuous Learning</h3>
+      <div class="card">
+        <h4>Stay Current</h4>
+        <ul>
+          <li><strong>Follow:</strong> OWASP, NIST, SANS, Krebs on Security</li>
+          <li><strong>Certifications:</strong> CISSP, OSCP, AWS Security, CEH</li>
+          <li><strong>Practice:</strong> Hack The Box, TryHackMe, CTF competitions</li>
+          <li><strong>Community:</strong> Security conferences (DEF CON, Black Hat, RSA)</li>
+          <li><strong>Books:</strong> "Security Engineering" by Ross Anderson, "The Web Application Hacker's Handbook"</li>
+        </ul>
+      </div>
+    </section>
+
+    <footer>
+      <p>Security System Design Mastery Guide | Created November 2026</p>
+      <p>Remember: Security is not a product, but a process. Stay vigilant, stay curious.</p>
+    </footer>
+  </main>
+</div>
+
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+  <svg id="theme-icon" viewBox="0 0 24 24">
+    <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z"/>
+  </svg>
+</button>
+
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  const currentTheme = html.getAttribute('data-theme');
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', newTheme);
+  localStorage.setItem('theme', newTheme);
+  updateThemeIcon(newTheme);
+}
+
+function updateThemeIcon(theme) {
+  const icon = document.getElementById('theme-icon');
+  if (theme === 'dark') {
+    icon.innerHTML = '<path d="M9.598 1.591a.75.75 0 01.785-.175 10.5 10.5 0 017.631 7.631.75.75 0 01-.175.785 9.75 9.75 0 11-8.241-8.241z"/>';
+  } else {
+    icon.innerHTML = '<path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z"/>';
+  }
+}
+
+// Initialize theme
+const savedTheme = localStorage.getItem('theme') ||
+  (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+document.documentElement.setAttribute('data-theme', savedTheme);
+updateThemeIcon(savedTheme);
+
+// Smooth scrolling

@@ -1,0 +1,346 @@
+[
+  {
+    "name": "accessibility",
+    "path": "accessibility/SKILL.md",
+    "description": "Web accessibility (a11y) guidelines, WCAG 2.1/2.2 compliance, screen reader optimization, keyboard navigation, ARIA attributes, color contrast, focus management, accessible forms, and inclusive design patterns. Use when building accessible interfaces, implementing WCAG standards, optimizing for screen readers, adding keyboard navigation, or ensuring inclusive user experiences.",
+    "category": "other",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "aesthetic",
+    "path": "aesthetic/SKILL.md",
+    "description": "Create aesthetically beautiful interfaces by following proven design principles and systematic workflows.",
+    "category": "frontend",
+    "has_scripts": false,
+    "has_references": true
+  },
+  {
+    "name": "ai-multimodal",
+    "path": "ai-multimodal/SKILL.md",
+    "description": "Process and generate multimedia with Google Gemini API. Analyze audio (transcription, summarization, 9.5h), images (captioning, OCR, object detection), videos (scene detection, Q&A, 6h), documents (PDF extraction). Generate images (Imagen 4) and videos (Veo 3, 8s clips). Use when analyzing media files, extracting data from documents, creating images/videos from prompts, or implementing multimodal AI features.",
+    "category": "ai-ml",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "api-design",
+    "path": "api-design/SKILL.md",
+    "description": "REST API design, GraphQL schemas, API versioning, OpenAPI/Swagger documentation, HATEOAS, pagination, filtering, sorting, error responses, rate limiting, authentication, and API best practices. Use when designing APIs, creating RESTful endpoints, building GraphQL schemas, documenting APIs, implementing versioning, or establishing API standards.",
+    "category": "frontend",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "backend-development",
+    "path": "backend-development/SKILL.md",
+    "description": "Build robust backend systems with Node.js, Python, Go, Rust. Frameworks (NestJS, FastAPI, Django), databases (PostgreSQL, MongoDB, Redis), APIs (REST, GraphQL, gRPC), auth (OAuth 2.1, JWT), testing, security (OWASP Top 10), performance, scalability (microservices, caching), DevOps (Docker, Kubernetes, CI/CD). Use when designing APIs, implementing auth, optimizing queries, or building production backends.",
+    "category": "backend",
+    "has_scripts": false,
+    "has_references": true
+  },
+  {
+    "name": "better-auth",
+    "path": "better-auth/SKILL.md",
+    "description": "Implement auth with Better Auth - framework-agnostic TypeScript authentication. Email/password with verification, OAuth providers (Google, GitHub, Discord), 2FA (TOTP, SMS), passkeys/WebAuthn, session management, RBAC, rate limiting, database adapters. Use when adding authentication, implementing OAuth, setting up 2FA/MFA, managing sessions, or building secure auth systems.",
+    "category": "backend",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "caching-strategies",
+    "path": "caching-strategies/SKILL.md",
+    "description": "Caching patterns, cache invalidation strategies, Redis implementation, CDN caching, browser caching, distributed caching, cache warming, cache stampede prevention, and performance optimization. Use when implementing caching layers, optimizing application performance, reducing database load, setting up Redis, configuring CDNs, or designing cache invalidation strategies.",
+    "category": "other",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "chrome-devtools",
+    "path": "chrome-devtools/SKILL.md",
+    "description": "Browser automation, debugging, and performance analysis using Puppeteer CLI scripts. Automate browsers, take screenshots, analyze Core Web Vitals, monitor network traffic, scrape data, fill forms, debug JavaScript. All scripts output JSON for parsing. Use when automating browsers, taking screenshots, analyzing performance, monitoring network, web scraping, or debugging JavaScript.",
+    "category": "multimedia",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "code-review",
+    "path": "code-review/SKILL.md",
+    "description": "Comprehensive code review with multi-dimensional analysis and automated quality checks",
+    "category": "utilities",
+    "has_scripts": false,
+    "has_references": true
+  },
+  {
+    "name": "database-migration",
+    "path": "database-migration/SKILL.md",
+    "description": "Schema migrations, data migrations, rollback strategies, migration versioning, zero-downtime migrations, backward compatibility, migration testing, and database evolution patterns. Use when modifying database schemas, migrating data between formats, implementing version control for databases, or planning database changes with minimal downtime.",
+    "category": "database",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "databases",
+    "path": "databases/SKILL.md",
+    "description": "Work with MongoDB (document DB, aggregation pipelines, Atlas) and PostgreSQL (relational DB, SQL, psql). Design schemas, write queries, optimize indexes, perform migrations, configure replication/sharding, implement backups, manage permissions. Use when designing schemas, writing queries, optimizing performance, performing migrations, or administering databases.",
+    "category": "database",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "debugging",
+    "path": "debugging/SKILL.md",
+    "description": "Systematic debugging framework ensuring root cause investigation before fixes. Four-phase process, backward call stack tracing, multi-layer validation, verification protocols. Use when encountering bugs, test failures, unexpected behavior, performance issues, or before claiming work complete. Prevents random fixes and false completion claims.",
+    "category": "utilities",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "devops",
+    "path": "devops/SKILL.md",
+    "description": "Deploy cloud infrastructure on Cloudflare (Workers, R2, D1, KV, Pages), Docker, and Google Cloud (Compute Engine, GKE, Cloud Run). Deploy serverless functions, manage containers, set up CI/CD, optimize costs, implement caching. Use when deploying serverless, configuring edge computing, managing Docker, setting up CI/CD, or building cloud-native apps.",
+    "category": "infrastructure",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "docs-seeker",
+    "path": "docs-seeker/SKILL.md",
+    "description": "Search technical documentation using executable scripts. Detect query type, fetch from llms.txt sources (context7.com), analyze results. Use when needing topic-specific documentation (features/components/concepts), library/framework docs, GitHub repository analysis, or documentation discovery with automated agent distribution.",
+    "category": "dev-tools",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "document-skills/docx",
+    "path": "document-skills/docx/SKILL.md",
+    "description": "Comprehensive document creation, editing, and analysis with support for tracked changes, comments, formatting preservation, and text extraction. When Claude needs to work with professional documents (.docx files) for: (1) Creating new documents, (2) Modifying or editing content, (3) Working with tracked changes, (4) Adding comments, or any other document tasks",
+    "category": "multimedia",
+    "has_scripts": true,
+    "has_references": false
+  },
+  {
+    "name": "document-skills/pdf",
+    "path": "document-skills/pdf/SKILL.md",
+    "description": "Comprehensive PDF manipulation toolkit for extracting text and tables, creating new PDFs, merging/splitting documents, and handling forms. When Claude needs to fill in a PDF form or programmatically process, generate, or analyze PDF documents at scale.",
+    "category": "multimedia",
+    "has_scripts": true,
+    "has_references": false
+  },
+  {
+    "name": "document-skills/pptx",
+    "path": "document-skills/pptx/SKILL.md",
+    "description": "Presentation creation, editing, and analysis. When Claude needs to work with presentations (.pptx files) for: (1) Creating new presentations, (2) Modifying or editing content, (3) Working with layouts, (4) Adding comments or speaker notes, or any other presentation tasks",
+    "category": "multimedia",
+    "has_scripts": true,
+    "has_references": false
+  },
+  {
+    "name": "document-skills/xlsx",
+    "path": "document-skills/xlsx/SKILL.md",
+    "description": "Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Claude needs to work with spreadsheets (.xlsx, .xlsm, .csv, .tsv, etc) for: (1) Creating new spreadsheets with formulas and formatting, (2) Reading or analyzing data, (3) Modify existing spreadsheets while preserving formulas, (4) Data analysis and visualization in spreadsheets, or (5) Recalculating formulas",
+    "category": "multimedia",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "e2e-testing",
+    "path": "e2e-testing/SKILL.md",
+    "description": "End-to-end testing using MCP Playwright integration for browser automation, visual testing, and user workflow validation. Use when testing web applications, validating user journeys, capturing screenshots, or automating browser interactions.",
+    "category": "other",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "error-handling",
+    "path": "error-handling/SKILL.md",
+    "description": "Error handling patterns, exception management, retry logic with exponential backoff, circuit breakers, graceful degradation, error boundaries, custom error types, error logging strategies, and fault tolerance. Use when implementing error handling, designing resilient systems, handling failures gracefully, setting up retry mechanisms, or building fault-tolerant applications.",
+    "category": "other",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "frontend-design",
+    "path": "frontend-design/SKILL.md",
+    "description": "Create distinctive, production-grade frontend interfaces. Build web components, pages, applications with high design quality. Extract design guidelines from screenshots/images using ai-multimodal, then implement code. Avoid generic AI aesthetics. Use when building web UI, replicating designs from screenshots, or creating polished interfaces.",
+    "category": "frontend",
+    "has_scripts": false,
+    "has_references": true
+  },
+  {
+    "name": "frontend-development",
+    "path": "frontend-development/SKILL.md",
+    "description": "Comprehensive guide for modern React development, emphasizing Suspense-based data fetching, lazy loading, proper file organization, and performance optimization.",
+    "category": "frontend",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "git-workflow",
+    "path": "git-workflow/SKILL.md",
+    "description": "Git best practices, branching strategies (GitFlow, GitHub Flow, trunk-based), commit conventions (Conventional Commits), merge vs rebase, pull request workflows, code review processes, release management, and version control automation. Use when setting up Git workflows, establishing commit standards, managing branches, creating pull requests, handling merge conflicts, or automating Git operations.",
+    "category": "other",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "google-adk-python",
+    "path": "google-adk-python/SKILL.md",
+    "description": "Build AI agents with Google's Agent Development Kit (ADK) Python. Create single/multi-agent systems, implement workflow agents (sequential, parallel, loop), integrate tools (Google Search, Code Execution, custom functions), deploy to Vertex AI or Cloud Run. Supports Gemini models, hierarchical composition, human-in-the-loop flows. Use when building agent systems, implementing workflows, or deploying AI agents.",
+    "category": "ai-ml",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "logging-observability",
+    "path": "logging-observability/SKILL.md",
+    "description": "Logging best practices, structured logging, monitoring strategies, distributed tracing, metrics collection, observability patterns, log aggregation, alerting, dashboards, and production debugging. Use when implementing logging systems, setting up monitoring, configuring tracing, building observability pipelines, or debugging production issues.",
+    "category": "other",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "mcp-builder",
+    "path": "mcp-builder/SKILL.md",
+    "description": "Create high-quality MCP (Model Context Protocol) servers enabling LLMs to interact with external services. Build MCP servers in Python (FastMCP) or Node/TypeScript (MCP SDK). Design agent-centric tools, implement proper error handling, create evaluation tests. Use when building MCP servers, integrating external APIs, or creating tools for LLMs.",
+    "category": "frontend",
+    "has_scripts": true,
+    "has_references": false
+  },
+  {
+    "name": "mcp-management",
+    "path": "mcp-management/SKILL.md",
+    "description": "Manage MCP (Model Context Protocol) servers - discover, analyze, execute tools/prompts/resources. Discover MCP capabilities, filter tools for tasks, execute tools programmatically, access prompts/resources. Use when working with MCP integrations, discovering MCP capabilities, filtering MCP tools, or implementing MCP client functionality.",
+    "category": "dev-tools",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "media-processing",
+    "path": "media-processing/SKILL.md",
+    "description": "Process multimedia with FFmpeg (video/audio encoding, streaming, filtering), ImageMagick (image manipulation, batch processing, effects), and RMBG (AI background removal). Convert formats, encode videos (H.264/H.265/VP9), resize images, remove backgrounds, extract audio, apply filters, optimize sizes, create streaming manifests (HLS/DASH). Use when converting media, encoding videos, processing images, or building media pipelines.",
+    "category": "multimedia",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "mobile-development",
+    "path": "mobile-development/SKILL.md",
+    "description": "Build mobile apps with React Native, Flutter, Swift/SwiftUI, Kotlin/Jetpack Compose. Mobile-first design, performance optimization (battery, memory, network), offline-first architecture, platform guidelines (iOS HIG, Material Design), testing, security, accessibility, app store deployment. Use when building mobile apps, implementing mobile UX, optimizing for mobile, or choosing native vs cross-platform.",
+    "category": "frameworks",
+    "has_scripts": false,
+    "has_references": true
+  },
+  {
+    "name": "payment-integration",
+    "path": "payment-integration/SKILL.md",
+    "description": "Implement payment processing with SePay (Vietnamese payments) and Polar (global SaaS monetization).",
+    "category": "backend",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "planning",
+    "path": "planning/SKILL.md",
+    "description": "Strategic planning and task decomposition for complex multi-step implementations",
+    "category": "utilities",
+    "has_scripts": false,
+    "has_references": true
+  },
+  {
+    "name": "problem-solving",
+    "path": "problem-solving/SKILL.md",
+    "description": "Systematic problem-solving techniques for complexity spirals (simplification cascades), innovation blocks (collision-zone thinking), recurring patterns (meta-pattern recognition), assumption constraints (inversion exercise), scale uncertainty (scale game). Techniques from Microsoft Amplifier project. Use when encountering complexity, innovation blocks, recurring patterns, or general stuck-ness.",
+    "category": "utilities",
+    "has_scripts": false,
+    "has_references": true
+  },
+  {
+    "name": "quality-gates",
+    "path": "quality-gates/SKILL.md",
+    "description": "Multi-layer quality validation system with automated gates and checkpoints",
+    "category": "other",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "repomix",
+    "path": "repomix/SKILL.md",
+    "description": "Package code repositories into AI-friendly files using Repomix. Pack codebases with include/exclude patterns, generate XML/Markdown/text formats, preserve structure, optimize for LLMs with token counting. Use when packaging code for AI analysis, creating repo snapshots, analyzing libraries, preparing security audits, or evaluating codebases.",
+    "category": "dev-tools",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "research",
+    "path": "research/SKILL.md",
+    "description": "Conduct systematic technical research using multi-source strategies (official docs, GitHub repos, authoritative sources). Investigate technologies, analyze best practices, evaluate security/performance, gather implementation guidance. Use when researching tech, analyzing practices, evaluating implications, or gathering guidance.",
+    "category": "utilities",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "security-review",
+    "path": "security-review/SKILL.md",
+    "description": "Comprehensive security review framework for code analysis, vulnerability detection, OWASP compliance, authentication/authorization checks, input validation, and secure coding practices. Use when reviewing code for security issues, implementing authentication, handling sensitive data, or before deploying to production.",
+    "category": "other",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "sequential-thinking",
+    "path": "sequential-thinking/SKILL.md",
+    "description": "Apply structured, reflective problem-solving for complex tasks. Multi-step analysis with revision capability and hypothesis verification. Use for complex problem decomposition, adaptive planning, analysis needing course correction, problems with unclear scope, multi-step solutions, or hypothesis-driven work.",
+    "category": "utilities",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "shopify",
+    "path": "shopify/SKILL.md",
+    "description": "Build Shopify apps, extensions, and themes using GraphQL/REST APIs, Shopify CLI, Polaris UI, and Liquid. Develop apps with OAuth, checkout/admin/POS extensions, themes with Liquid, webhook management, billing integration. Use when building Shopify apps, implementing checkout customizations, creating admin interfaces, developing themes, or extending Shopify.",
+    "category": "frameworks",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "skill-creator",
+    "path": "skill-creator/SKILL.md",
+    "description": "Create effective skills, add skill references/scripts, or optimize existing skills. Extend Claude's capabilities with specialized knowledge, workflows, frameworks, libraries, plugins, or API/tool integrations. Use when creating new skills, updating existing skills, adding skill references or scripts, or optimizing skills.",
+    "category": "dev-tools",
+    "has_scripts": true,
+    "has_references": false
+  },
+  {
+    "name": "testing-qa",
+    "path": "testing-qa/SKILL.md",
+    "description": "Comprehensive testing and quality assurance for code changes with multi-layer validation",
+    "category": "other",
+    "has_scripts": false,
+    "has_references": false
+  },
+  {
+    "name": "threejs",
+    "path": "threejs/SKILL.md",
+    "description": "Build 3D web experiences with Three.js (WebGL/WebGPU). Create scenes, cameras, geometries, materials, lights, animations, loaders, post-processing, shaders (TSL), physics, VR/XR. Use when creating 3D visualizations, games, interactive graphics, data viz, product configurators, architectural walkthroughs, or WebGL/WebGPU applications.",
+    "category": "frontend",
+    "has_scripts": false,
+    "has_references": true
+  },
+  {
+    "name": "ui-styling",
+    "path": "ui-styling/SKILL.md",
+    "description": "Create beautiful, accessible UIs with shadcn/ui (Radix UI + Tailwind), Tailwind CSS utility-first styling, and canvas-based visual designs. Build interfaces, implement design systems, create responsive layouts, add accessible components, customize themes, implement dark mode. Use when building UI, implementing design systems, creating layouts, or establishing styling patterns.",
+    "category": "frontend",
+    "has_scripts": true,
+    "has_references": true
+  },
+  {
+    "name": "web-frameworks",
+    "path": "web-frameworks/SKILL.md",
+    "description": "Build full-stack web apps with Next.js (App Router, RSC, SSR/SSG), Turborepo (monorepo management, task pipelines, caching), and RemixIcon (3100+ SVG icons). Create React apps, implement SSR, set up monorepos, optimize builds, add icons. Use when creating React apps, implementing SSR, setting up monorepos, or working with TypeScript full-stack projects.",
+    "category": "frameworks",
+    "has_scripts": true,
+    "has_references": true
+  }
+]

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Security at Scale</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a2e;
+  --accent: #6366f1;
+  --accent-light: #818cf8;
+  --surface: #f8fafc;
+  --border: #e2e8f0;
+  --code-bg: #1e293b;
+  --code-fg: #e2e8f0;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f172a;
+    --fg: #e2e8f0;
+    --accent: #818cf8;
+    --accent-light: #a5b4fc;
+    --surface: #1e293b;
+    --border: #334155;
+    --code-bg: #0f172a;
+    --code-fg: #cbd5e1;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f172a;
+  --fg: #e2e8f0;
+  --accent: #818cf8;
+  --accent-light: #a5b4fc;
+  --surface: #1e293b;
+  --border: #334155;
+  --code-bg: #0f172a;
+  --code-fg: #cbd5e1;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.6;
+  padding: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+}
+.container { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 2.5rem; margin-bottom: 1rem; color: var(--accent); }
+h2 { font-size: 1.75rem; margin: 2rem 0 1rem; color: var(--fg); }
+h3 { font-size: 1.25rem; margin: 1.5rem 0 0.75rem; }
+p { margin-bottom: 1rem; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+code {
+  font-family: 'Menlo', 'Consolas', monospace;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  font-size: 0.875em;
+}
+pre {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 1rem 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+pre code { background: none; padding: 0; color: inherit; }
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.badge-basic { background: var(--accent); color: white; }
+.badge-intermediate { background: var(--warning); color: white; }
+.badge-advanced { background: var(--danger); color: white; }
+.diagram {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+  text-align: center;
+  font-family: monospace;
+  white-space: pre;
+  overflow-x: auto;
+}
+.grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  margin-bottom: 0.5rem;
+}
+.step-number {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
+.theme-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+</style>
+</head>
+<body>
+<button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
+<div class="container">
+<h1>Security at Scale: Authentication & Authorization</h1>
+<p>A comprehensive system design guide covering patterns from basic to advanced implementations in modern tech stacks.</p>
+
+<div class="card">
+<h2>1. Core Concepts</h2>
+<div class="grid">
+<div>
+<h3>Authentication (AuthN)</h3>
+<p><strong>Who are you?</strong> Verifying user identity through credentials, tokens, or biometrics.</p>
+<ul>
+<li>Password-based login</li>
+<li>Multi-factor authentication (MFA)</li>
+<li>OAuth2 / OIDC providers</li>
+<li>Biometric verification</li>
+</ul>
+</div>
+<div>
+<h3>Authorization (AuthZ)</h3>
+<p><strong>What can you do?</strong> Determining access rights after identity is confirmed.</p>
+<ul>
+<li>Role-Based Access Control (RBAC)</li>
+<li>Attribute-Based Access Control (ABAC)</li>
+<li>Policy engines (OPA, Cedar)</li>
+<li>Resource-level permissions</li>
+</ul>
+</div>
+</div>
+</div>
+
+<div class="card">
+<h2>2. Architecture Patterns</h2>
+
+<h3>Pattern A: Monolithic Auth (Basic)</h3>
+<span class="badge badge-basic">Basic</span>
+<div class="diagram">
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│   Client    │────▶│  App Server   │────▶│  Database   │
+│ (Browser)   │◀────│ (Express.js)  │◀────│ (MongoDB)   │
+└─────────────┘     └──────────────┘     └─────────────┘
+                         │
+                    ┌────▼─────┐
+                    │  Session │
+                    │  Store   │
+                    └──────────┘
+</div>
+<p>All auth logic lives in the application server. Simple to implement but becomes a bottleneck at scale.</p>
+
+<h3>Pattern B: API Gateway + Auth Service (Intermediate)</h3>
+<span class="badge badge-intermediate">Intermediate</span>
+<div class="diagram">
+┌──────────┐    ┌─────────────┐    ┌──────────────┐
+│  Client  │───▶│ API Gateway │───▶│ Auth Service │
+└──────────┘    └─────────────┘    └──────────────┘
+                       │                  │
+                  ┌────▼─────┐      ┌────▼─────┐
+                  │ Services │      │  User DB │
+                  │ (Micro)  │      └──────────┘
+                  └──────────┘
+</div>
+<p>Centralized auth at the gateway layer. JWTs propagate identity to downstream services.</p>
+
+<h3>Pattern C: Zero-Trust Mesh (Advanced)</h3>
+<span class="badge badge-advanced">Advanced</span>
+<div class="diagram">
+┌──────────┐   ┌──────────┐   ┌──────────┐
+│ Service A│   │ Service B│   │ Service C│
+└────┬─────┘   └────┬─────┘   └────┬─────┘
+     │              │              │
+     └──────────────┼──────────────┘
+                    │
+           ┌────────▼────────┐
+           │  Service Mesh   │
+           │ (mTLS + OPA)    │
+           └─────────────────┘
+</div>
+<p>Every service-to-service call is authenticated and authorized. Uses mutual TLS and policy enforcement points.</p>
+</div>
+
+<div class="card">
+<h2>3. Implementation Examples</h2>
+
+<h3>JWT Authentication Flow</h3>
+<pre><code>// Backend: Express.js + JWT
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+
+// Login endpoint
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+  const user = await db.users.findOne({ email });
+
+  if (!user || !await bcrypt.compare(password, user.passwordHash)) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  const token = jwt.sign(
+    { sub: user.id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h', issuer: 'auth-service' }
+  );
+
+  res.json({ accessToken: token, refreshToken: user.refreshToken });
+});
+
+// Auth middleware
+function authenticate(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing token' });
+  }
+
+  try {
+    const payload = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET);
+    req.user = payload;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+}
+</code></pre>
+
+<h3>RBAC Authorization Middleware</h3>
+<pre><code>// Role-based access control
+const ROLES = {
+  ADMIN: 'admin',
+  EDITOR: 'editor',
+  VIEWER: 'viewer'
+};
+
+function authorize(...requiredRoles) {
+  return (req, res, next) => {
+    if (!req.user || !requiredRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    next();
+  };
+}
+
+// Usage
+app.get('/api/admin/users',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  async (req, res) => {
+    const users = await db.users.find();
+    res.json(users);
+  }
+);
+</code></pre>
+
+<h3>OAuth2 with PKCE (Public Clients)</h3>
+<pre><code>// Frontend: React OAuth2 flow with PKCE
+import { useEffect, useState } from 'react';
+
+function generateCodeVerifier() {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return btoa(String.fromCharCode(...array)).replace(/[^a-zA-Z0-9]/g, '');
+}
+
+async function generateCodeChallenge(verifier) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+export function useOAuth2() {
+  const [verifier, setVerifier] = useState(null);
+
+  const initiateLogin = async () => {
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
+    setVerifier(codeVerifier);
+
+    const params = new URLSearchParams({
+      client_id: 'my-app',
+      redirect_uri: window.location.origin + '/callback',
+      response_type: 'code',
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      scope: 'openid profile email'
+    });
+
+    window.location.href = `https://auth-provider.com/authorize?${params}`;
+  };
+
+  return { initiateLogin, verifier };
+}
+</code></pre>
+</div>
+
+<div class="card">
+<h2>4. Security Best Practices</h2>
+
+<h3>Token Management</h3>
+<div class="flow-step">
+<div class="step-number">1</div>
+<div><strong>Short-lived access tokens:</strong> 5-15 minutes for APIs, 1 hour for user sessions</div>
+</div>
+<div class="flow-step">
+<div class="step-number">2</div>
+<div><strong>Refresh token rotation:</strong> Issue new refresh token on each use, revoke old one</div>
+</div>
+<div class="flow-step">
+<div class="step-number">3</div>
+<div><strong>Secure storage:</strong> httpOnly cookies for web, encrypted storage for mobile</div>
+</div>
+<div class="flow-step">
+<div class="step-number">4</div>
+<div><strong>Token binding:</strong> Bind tokens to device fingerprint or IP range</div>
+</div>
+
+<h3>Rate Limiting & Brute Force Protection</h3>
+<pre><code>const rateLimit = require('express-rate-limit');
+const RedisStore = require('rate-limit-redis');
+
+// Login rate limiter
+const loginLimiter = rateLimit({
+  store: new RedisStore({
+    client: redisClient,
+    prefix: 'rl:login:'
+  }),
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts per window
+  message: { error: 'Too many login attempts. Try again later.' },
+  standardHeaders: true
+});
+
+app.post('/api/login', loginLimiter, handleLogin);
+
+// Account lockout after failed attempts
+async function checkAccountLockout(userId) {
+  const key = `lockout:${userId}`;
+  const attempts = await redis.incr(key);
+
+  if (attempts === 1) {
+    await redis.expire(key, 900); // Reset after 15 minutes
+  }
+
+  if (attempts > 5) {
+    throw new Error('Account locked due to too many failed attempts');
+  }
+}
+</code></pre>
+
+<h3>CORS & Security Headers</h3>
+<pre><code>const helmet = require('helmet');
+const cors = require('cors');
+
+// Security headers
+app.use(helmet());
+
+// Strict CORS
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS.split(','),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Content Security Policy
+app.use(helmet.contentSecurityPolicy({
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'"],
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    imgSrc: ["'self'", "data:", "https:"],
+  }
+}));
+</code></pre>
+</div>
+
+<div class="card">
+<h2>5. Advanced Patterns</h2>
+
+<h3>Distributed Session Management</h3>
+<div class="diagram">
+┌──────────┐     ┌──────────┐     ┌──────────┐
+│ Service A│     │ Service B│     │ Service C│
+└────┬─────┘     └────┬─────┘     └────┬─────┘
+     │                │                │
+     └────────────────┼────────────────┘
+                      │
+             ┌────────▼────────┐
+             │  Redis Cluster  │
+             │  (Session Store)│
+             └─────────────────┘
+</div>
+<pre><code>// Centralized session store with Redis
+const session = require('express-session');
+const RedisStore = require('connect-redis').default;
+
+app.use(session({
+  store: new RedisStore({ client: redisClient }),
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 30 * 60 * 1000 // 30 minutes
+  }
+}));
+</code></pre>
+
+<h3>Policy Engine with Open Policy Agent (OPA)</h3>
+<pre><code># OPA Policy (Rego language)
+package authz
+
+import input
+
+default allow = false
+
+# Admin can access everything
+allow {
+  input.user.role == "admin"
+}
+
+# Editor can read and write resources in their department
+allow {
+  input.user.role == "editor"
+  input.action in ["read", "write"]
+  input.resource.department == input.user.department
+}
+
+# Viewer can only read public resources
+allow {
+  input.user.role == "viewer"
+  input.action == "read"
+  input.resource.visibility == "public"
+}
+</code></pre>
+<pre><code>// Node.js integration with OPA
+async function checkPolicy(user, action, resource) {
+  const response = await fetch('http://opa-server:8181/v1/data/authz/allow', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      input: {
+        user: { id: user.id, role: user.role, department: user.department },
+        action,
+        resource: { id: resource.id, department: resource.department, visibility: resource.visibility }
+      }
+    })
+  });
+
+  const result = await response.json();
+  return result.result;
+}
+
+// Usage in route
+app.get('/api/resources/:id', authenticate, async (req, res) => {
+  const resource = await db.resources.findById(req.params.id);
+
+  const allowed = await checkPolicy(req.user, 'read', resource);
+  if (!allowed) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  res.json(resource);
+});
+</code></pre>
+
+<h3>Zero-Trust Service-to-Service Auth</h3>
+<pre><code>// Mutual TLS configuration
+const https = require('https');
+const fs = require('fs');
+
+const agent = new https.Agent({
+  ca: fs.readFileSync('/certs/ca.crt'),
+  cert: fs.readFileSync('/certs/service-a.crt'),
+  key: fs.readFileSync('/certs/service-a.key'),
+  rejectUnauthorized: true
+});
+
+// Service call with mTLS
+async function callServiceB(data) {
+  const response = await fetch('https://service-b.internal/api/data', {
+    method: 'POST',
+    agent,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Request-ID': crypto.randomUUID()
+    },
+    body: JSON.stringify(data)
+  });
+
+  return response.json();
+}
+</code></pre>
+</div>
+
+<div class="card">
+<h2>6. Threat Model & Mitigations</h2>
+<table style="width: 100%; border-collapse: collapse;">
+<thead>
+<tr style="border-bottom: 2px solid var(--border);">
+<th style="text-align: left; padding: 0.75rem;">Threat</th>
+<th style="text-align: left; padding: 0.75rem;">Mitigation</th>
+<th style="text-align: left; padding: 0.75rem;">Severity</th>
+</tr>
+</thead>
+<tbody>
+<tr style="border-bottom: 1px solid var(--border);">
+<td style="padding: 0.75rem;">Token theft via XSS</td>
+<td style="padding: 0.75rem;">httpOnly cookies, CSP headers, short TTL</td>
+<td style="padding: 0.75rem;"><span class="badge badge-advanced">High</span></td>
+</tr>
+<tr style="border-bottom: 1px solid var(--border);">
+<td style="padding: 0.75rem;">Brute force attacks</td>
+<td style="padding: 0.75rem;">Rate limiting, account lockout, MFA</td>
+<td style="padding: 0.75rem;"><span class="badge badge-advanced">High</span></td>
+</tr>
+<tr style="border-bottom: 1px solid var(--border);">
+<td style="padding: 0.75rem;">Privilege escalation</td>
+<td style="padding: 0.75rem;">Server-side validation, RBAC/ABAC, audit logs</td>
+<td style="padding: 0.75rem;"><span class="badge badge-advanced">High</span></td>
+</tr>
+<tr style="border-bottom: 1px solid var(--border);">
+<td style="padding: 0.75rem;">Session fixation</td>
+<td style="padding: 0.75rem;">Regenerate session ID on login, bind to device</td>
+<td style="padding: 0.75rem;"><span class="badge badge-intermediate">Medium</span></td>
+</tr>
+<tr style="border-bottom: 1px solid var(--border);">
+<td style="padding: 0.75rem;">CSRF attacks</td>
+<td style="padding: 0.75rem;">SameSite cookies, CSRF tokens, double-submit</td>
+<td style="padding: 0.75rem;"><span class="badge badge-intermediate">Medium</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>7. Scaling Checklist</h2>
+<ul style="list-style: none; padding: 0;">
+<li style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">✅ Implement centralized auth service or API gateway</li>
+<li style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">✅ Use JWTs with short expiration and refresh token rotation</li>
+<li style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">✅ Store sessions in distributed cache (Redis cluster)</li>
+<li style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">✅ Implement rate limiting per user/IP/endpoint</li>
+<li style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">✅ Enable comprehensive audit logging</li>
+<li style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">✅ Use policy engine (OPA/Cedar) for complex authorization</li>
+<li style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">✅ Implement mTLS for service-to-service communication</li>
+<li style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">✅ Regular security audits and penetration testing</li>
+<li style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">✅ Automated dependency scanning and patching</li>
+<li style="padding: 0.5rem 0;">✅ Incident response plan with runbooks</li>
+</ul>
+</div>
+
+<p style="text-align: center; color: var(--accent); margin-top: 2rem;">
+Built with security-first principles | <code>2026-11-13</code>
+</p>
+</div>
+
+<script>
+function toggleTheme() {
+  const root = document.documentElement;
+  const current = root.getAttribute('data-theme');
+  root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+}
+</script>
+</body>
+</html>
