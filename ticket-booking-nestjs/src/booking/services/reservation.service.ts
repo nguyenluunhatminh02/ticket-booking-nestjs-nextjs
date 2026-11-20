@@ -66,10 +66,15 @@ export class ReservationService {
 
       if (event.queue_enabled) {
         const activeEntry = await tx.queueEntry.findFirst({
-          where: { eventId: dto.eventId, userId: user.id, status: QueueStatus.ACTIVE },
+          where: {
+            eventId: dto.eventId,
+            userId: user.id,
+            status: QueueStatus.ACTIVE,
+            expiresAt: { gt: new Date() },
+          },
         });
         if (!activeEntry) {
-          throw new BadRequestException('You must join the queue first');
+          throw new BadRequestException('Your queue position has expired or you have not joined the queue');
         }
       }
 

@@ -1,151 +1,103 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import Redis from 'ioredis';
+import { InjectRedis } from '@nestjs/bull';
+import { Redis } from 'ioredis';
 
-/**
- * Redis-backed temporary seat locking service.
- *
- * When a user selects a seat on the seat map, it is "locked" for 5 minutes.
- * This prevents other users from selecting the same seat while someone is
- * in the process of completing their booking.
- *
- * Redis key patterns:
- * - seat:lock:{eventId}:{seatId} → userId (TTL 5 min)
- * - seat:locks:{eventId} → SET of seatIds currently locked
- * - seat:user:{eventId}:{userId} → SET of seatIds locked by this user
- */
 @Injectable()
 export class SeatLockService {
   private readonly logger = new Logger(SeatLockService.name);
-  private readonly redis: Redis;
-  private readonly LOCK_TTL = 300; // 5 minutes in seconds
-  private readonly MAX_LOCKS_PER_USER = 10;
 
-  constructor(private configService: ConfigService) {
-    this.redis = new Redis({
-      host: configService.get('REDIS_HOST', 'localhost'),
-      port: configService.get<number>('REDIS_PORT', 6379),
-      password: configService.get('REDIS_PASSWORD'),
-    });
-  }
+  // Lua script for atomic unlock: check ownership + delete in one operation
+  private readonly unlockScript = `
+    local lockKey = KEYS[1]
+    local userLocksKey = KEYS[2]
+    local userId = ARGV[1]
+    local seatId = ARGV[2]
+
+    local currentHolder = redis.call('GET', lockKey)
+    if currentHolder ~= userId then
+      return 0
+    end
+
+    redis.call('DEL', lockKey)
+    redis.call('SREM', userLocksKey, seatId)
+    return 1
+  `;
+
+  constructor(@InjectRedis() private redis: Redis) {}
 
   async lockSeat(eventId: string, seatId: string, userId: string): Promise<boolean> {
-    const lockKey = this.lockKey(eventId, seatId);
-    const userLocksKey = this.userLocksKey(eventId, userId);
+    const lockKey = `seat-lock:${eventId}:${seatId}`;
+    const userLocksKey = `user-seat-locks:${eventId}:${userId}`;
 
-    try {
-      // Check if already locked by this user (idempotent)
-      const currentHolder = await this.redis.get(lockKey);
-      if (currentHolder === userId) {
-        await this.redis.expire(lockKey, this.LOCK_TTL);
-        return true;
-      }
-
-      // Check if locked by another user
-      if (currentHolder) {
-        return false;
-      }
-
-      // Check per-user limit
-      const userLockCount = await this.redis.scard(userLocksKey);
-      if (userLockCount >= this.MAX_LOCKS_PER_USER) {
-        this.logger.warn(`User ${userId} exceeded max seat locks for event ${eventId}`);
-        return false;
-      }
-
-      // Atomic set-if-absent with TTL
-      const acquired = await this.redis.set(lockKey, userId, 'EX', this.LOCK_TTL, 'NX');
-      if (acquired === 'OK') {
-        await this.redis.sadd(userLocksKey, seatId);
-        await this.redis.expire(userLocksKey, this.LOCK_TTL + 60);
-
-        const eventLocksKey = this.eventLocksKey(eventId);
-        await this.redis.sadd(eventLocksKey, seatId);
-        await this.redis.expire(eventLocksKey, this.LOCK_TTL + 60);
-
-        this.logger.debug(`Seat ${seatId} locked by user ${userId} for event ${eventId}`);
-        return true;
-      }
-
-      return false;
-    } catch (e) {
-      this.logger.error(`Failed to lock seat ${seatId} for user ${userId}: ${e.message}`);
+    // Check if user already has too many locks
+    const currentLocks = await this.redis.scard(userLocksKey);
+    if (currentLocks >= 10) {
+      this.logger.warn(`User ${userId} has too many seat locks`);
       return false;
     }
+
+    // Try to acquire lock with 5-minute TTL
+    const result = await this.redis.set(lockKey, userId, 'EX', 300, 'NX');
+    if (result === 'OK') {
+      await this.redis.sadd(userLocksKey, seatId);
+      this.logger.debug(`Seat ${seatId} locked by user ${userId}`);
+      return true;
+    }
+
+    return false;
   }
 
   async unlockSeat(eventId: string, seatId: string, userId: string): Promise<boolean> {
-    const lockKey = this.lockKey(eventId, seatId);
+    const lockKey = `seat-lock:${eventId}:${seatId}`;
+    const userLocksKey = `user-seat-locks:${eventId}:${userId}`;
 
-    try {
-      const currentHolder = await this.redis.get(lockKey);
-      if (currentHolder !== userId) {
-        return false;
-      }
+    // Atomic check + delete using Lua script
+    const result = await this.redis.eval(
+      this.unlockScript,
+      2,
+      lockKey,
+      userLocksKey,
+      userId,
+      seatId,
+    );
 
-      await this.redis.del(lockKey);
-      await this.redis.srem(this.userLocksKey(eventId, userId), seatId);
-      await this.redis.srem(this.eventLocksKey(eventId), seatId);
-
-      this.logger.debug(`Seat ${seatId} unlocked by user ${userId} for event ${eventId}`);
+    if (result === 1) {
+      this.logger.debug(`Seat ${seatId} unlocked by user ${userId}`);
       return true;
-    } catch (e) {
-      this.logger.error(`Failed to unlock seat ${seatId} for user ${userId}: ${e.message}`);
-      return false;
     }
-  }
 
-  async releaseAllUserLocks(eventId: string, userId: string): Promise<void> {
-    const userLocksKey = this.userLocksKey(eventId, userId);
-
-    try {
-      const seatIds = await this.redis.smembers(userLocksKey);
-      for (const seatId of seatIds) {
-        const lockKey = this.lockKey(eventId, seatId);
-        const holder = await this.redis.get(lockKey);
-        if (holder === userId) {
-          await this.redis.del(lockKey);
-          await this.redis.srem(this.eventLocksKey(eventId), seatId);
-        }
-      }
-      await this.redis.del(userLocksKey);
-      this.logger.log(`Released all seat locks for user ${userId} on event ${eventId}`);
-    } catch (e) {
-      this.logger.error(`Failed to release locks for user ${userId} on event ${eventId}: ${e.message}`);
-    }
+    return false;
   }
 
   async getLockedSeats(eventId: string): Promise<Record<string, string>> {
-    const result: Record<string, string> = {};
-    const eventLocksKey = this.eventLocksKey(eventId);
+    const pattern = `seat-lock:${eventId}:*`;
+    const lockedSeats: Record<string, string> = {};
 
-    try {
-      const lockedSeatIds = await this.redis.smembers(eventLocksKey);
-      for (const seatId of lockedSeatIds) {
-        const holder = await this.redis.get(this.lockKey(eventId, seatId));
-        if (holder) {
-          result[seatId] = holder;
-        } else {
-          // Lock expired, clean up set
-          await this.redis.srem(eventLocksKey, seatId);
-        }
+    let cursor = '0';
+    do {
+      const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = nextCursor;
+
+      if (keys.length > 0) {
+        const values = await this.redis.mget(...keys);
+        keys.forEach((key, index) => {
+          const seatId = key.split(':')[2];
+          lockedSeats[seatId] = values[index];
+        });
       }
-    } catch (e) {
-      this.logger.error(`Failed to get locked seats for event ${eventId}: ${e.message}`);
+    } while (cursor !== '0');
+
+    return lockedSeats;
+  }
+
+  async releaseAllUserLocks(eventId: string, userId: string): Promise<void> {
+    const userLocksKey = `user-seat-locks:${eventId}:${userId}`;
+    const seatIds = await this.redis.smembers(userLocksKey);
+
+    for (const seatId of seatIds) {
+      await this.unlockSeat(eventId, seatId, userId);
     }
 
-    return result;
-  }
-
-  private lockKey(eventId: string, seatId: string): string {
-    return `seat:lock:${eventId}:${seatId}`;
-  }
-
-  private userLocksKey(eventId: string, userId: string): string {
-    return `seat:user:${eventId}:${userId}`;
-  }
-
-  private eventLocksKey(eventId: string): string {
-    return `seat:locks:${eventId}`;
+    await this.redis.del(userLocksKey);
   }
 }

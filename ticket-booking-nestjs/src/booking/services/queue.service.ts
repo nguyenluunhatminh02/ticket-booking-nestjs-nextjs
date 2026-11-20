@@ -77,6 +77,19 @@ export class QueueService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async promoteWaitingEntries(): Promise<void> {
+    // Step 1: Expire ACTIVE entries that have passed their expiresAt
+    const expired = await this.prisma.queueEntry.updateMany({
+      where: {
+        status: QueueStatus.ACTIVE,
+        expiresAt: { lt: new Date() },
+      },
+      data: { status: QueueStatus.EXPIRED },
+    });
+    if (expired.count > 0) {
+      console.log(`[Queue] Expired ${expired.count} ACTIVE entries`);
+    }
+
+    // Step 2: Promote WAITING entries to fill slots
     const events = await this.prisma.queueEntry.groupBy({
       by: ['eventId'],
       where: { status: QueueStatus.WAITING },
