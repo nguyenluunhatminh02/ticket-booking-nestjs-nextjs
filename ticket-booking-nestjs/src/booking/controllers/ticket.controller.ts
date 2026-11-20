@@ -1,73 +1,71 @@
 import {
   Controller,
   Get,
-  Post,
   Param,
   Query,
-  Body,
-  DefaultValuePipe,
-  ParseIntPipe,
-  Res,
+  ForbiddenException,
 } from '@nestjs/common';
-import { Response } from 'express';
-import { TicketService } from '../services/ticket.service';
 import { CurrentUser, Roles } from '../../common/decorators';
 import { User } from '../../auth/entities/user.entity';
+import { TicketService } from '../services/ticket.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('tickets')
 export class TicketController {
-  constructor(private readonly ticketService: TicketService) {}
+  constructor(
+    private readonly ticketService: TicketService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Get('my')
-  async getMyTickets(
-    @CurrentUser() user: User,
-    @Query('page', new DefaultValuePipe(0), ParseIntPipe) page: number,
-    @Query('size', new DefaultValuePipe(20), ParseIntPipe) size: number,
-  ) {
-    return this.ticketService.getMyTickets(user.id, page, size);
+  async getMyTickets(@CurrentUser() user: User) {
+    return this.ticketService.getUserTickets(user.id);
   }
 
   @Roles('ROLE_ADMIN', 'ROLE_ORGANIZER')
   @Get('event/:eventId')
   async getTicketsByEvent(
     @Param('eventId') eventId: string,
-    @Query('page', new DefaultValuePipe(0), ParseIntPipe) page: number,
-    @Query('size', new DefaultValuePipe(20), ParseIntPipe) size: number,
+    @CurrentUser() user: User,
   ) {
-    return this.ticketService.getTicketsByEvent(eventId, page, size);
+    // Resource authorization: organizer must own the event
+    const roles: string[] = (user as any).roles || [];
+    const isAdmin = roles.includes('ROLE_ADMIN');
+    if (!isAdmin) {
+      const event = await this.prisma.event.findUnique({ where: { id: eventId } });
+      if (!event || event.createdById !== user.id) {
+        throw new ForbiddenException('You do not have access to this event');
+      }
+    }
+    return this.ticketService.getTicketsByEvent(eventId);
   }
 
   @Get(':ticketCode')
-  async getTicketByCode(@Param('ticketCode') ticketCode: string, @CurrentUser() user: User) {
+  async getTicketByCode(
+    @Param('ticketCode') ticketCode: string,
+    @CurrentUser() user: User,
+  ) {
     const roles: string[] = (user as any).roles || [];
-    const privileged = roles.includes('ROLE_ADMIN') || roles.includes('ROLE_ORGANIZER');
-    return this.ticketService.getTicketByCode(ticketCode, privileged ? undefined : user.id);
-  }
+    const isAdmin = roles.includes('ROLE_ADMIN');
+    const isOrganizer = roles.includes('ROLE_ORGANIZER');
 
-  @Post(':ticketCode/cancel')
-  async cancelTicket(
-    @Param('ticketCode') ticketCode: string,
-    @CurrentUser() user: User,
-  ) {
-    return this.ticketService.cancelTicket(ticketCode, user.id);
-  }
+    if (isAdmin) {
+      return this.ticketService.getTicketByCode(ticketCode);
+    }
 
-  @Get(':ticketCode/qr')
-  async getQrCode(
-    @Param('ticketCode') ticketCode: string,
-    @CurrentUser() user: User,
-    @Res() res: Response,
-  ) {
-    const buffer = await this.ticketService.getQrCode(ticketCode, user.id);
-    res.set({ 'Content-Type': 'image/png' });
-    res.send(buffer);
-  }
+    if (isOrganizer) {
+      // Organizer can view ticket if they own the event
+      const ticket = await this.prisma.ticket.findUnique({
+        where: { ticketCode },
+        include: { event: true },
+      });
+      if (!ticket || ticket.event.createdById !== user.id) {
+        throw new ForbiddenException('You do not have access to this ticket');
+      }
+      return this.ticketService.getTicketByCode(ticketCode);
+    }
 
-  @Get(':ticketCode/dynamic-qr')
-  async getDynamicQr(
-    @Param('ticketCode') ticketCode: string,
-    @CurrentUser() user: User,
-  ) {
-    return this.ticketService.getDynamicQr(ticketCode, user.id);
+    // Regular user can only view their own tickets
+    return this.ticketService.getTicketByCode(ticketCode, user.id);
   }
 }

@@ -95,21 +95,31 @@ export class ReservationService {
         SELECT * FROM ticket_tiers WHERE id = ${dto.tierId}::uuid FOR UPDATE
       `;
       if (!tier) throw new NotFoundException('Ticket tier not found');
+      if (String(tier.event_id) !== dto.eventId) {
+        throw new BadRequestException('Ticket tier does not belong to this event');
+      }
       if (tier.available_quantity < quantity) {
         throw new ConflictException('Not enough tickets available');
       }
 
       let seats: any[] = [];
       if (dto.seatIds?.length) {
+        if (dto.seatIds.length !== quantity) {
+          throw new BadRequestException('Seat count must match quantity');
+        }
+        if (new Set(dto.seatIds).size !== dto.seatIds.length) {
+          throw new BadRequestException('Duplicate seat IDs');
+        }
         seats = await tx.$queryRaw<any[]>`
           SELECT * FROM seats
           WHERE id = ANY(${dto.seatIds}::uuid[])
             AND event_id = ${dto.eventId}::uuid
+            AND tier_id = ${dto.tierId}::uuid
             AND status = ${SeatStatus.AVAILABLE}
           FOR UPDATE
         `;
         if (seats.length !== dto.seatIds.length) {
-          throw new ConflictException('Some seats are not available');
+          throw new ConflictException('Some seats are not available or do not belong to the selected tier');
         }
       } else {
         seats = await tx.$queryRaw<any[]>`

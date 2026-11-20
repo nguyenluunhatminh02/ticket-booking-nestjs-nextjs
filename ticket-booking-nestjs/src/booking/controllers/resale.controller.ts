@@ -2,17 +2,16 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
+  Body,
   Param,
   Query,
-  Body,
-  DefaultValuePipe,
-  ParseIntPipe,
 } from '@nestjs/common';
-import { Public } from '../../common/decorators';
-import { ResaleService } from '../services/resale.service';
-import { ResaleListingDto } from '../dto';
-import { CurrentUser } from '../../common/decorators';
+import { Public, CurrentUser } from '../../common/decorators';
 import { User } from '../../auth/entities/user.entity';
+import { ResaleService } from '../services/resale.service';
+import { CreateResaleListingDto } from '../dto';
+import { PaymentProvider } from '../entities/enums';
 
 @Controller('resale')
 export class ResaleController {
@@ -20,64 +19,55 @@ export class ResaleController {
 
   @Public()
   @Get('marketplace')
-  async getMarketplace(
-    @Query('page', new DefaultValuePipe(0), ParseIntPipe) page: number,
-    @Query('size', new DefaultValuePipe(20), ParseIntPipe) size: number,
-  ) {
-    return this.resaleService.getAllMarketplace(page, size);
+  async getMarketplace(@Query('eventId') eventId?: string) {
+    return this.resaleService.getMarketplace(eventId);
   }
 
-  @Public()
-  @Get('event/:eventId')
-  async getMarketplaceByEvent(
-    @Param('eventId') eventId: string,
-    @Query('page', new DefaultValuePipe(0), ParseIntPipe) page: number,
-    @Query('size', new DefaultValuePipe(20), ParseIntPipe) size: number,
+  @Post('listings')
+  async createListing(
+    @Body() dto: CreateResaleListingDto,
+    @CurrentUser() user: User,
   ) {
-    return this.resaleService.getMarketplaceByEvent(eventId, page, size);
+    return this.resaleService.createListing(dto, user);
   }
 
   @Get('my-listings')
-  async getMyListings(
-    @CurrentUser() user: User,
-    @Query('page', new DefaultValuePipe(0), ParseIntPipe) page: number,
-    @Query('size', new DefaultValuePipe(20), ParseIntPipe) size: number,
-  ) {
-    return this.resaleService.getMyListings(user.id, page, size);
-  }
-
-  @Public()
-  @Get(':listingId')
-  async getListingDetails(@Param('listingId') listingId: string) {
-    return this.resaleService.getListingDetails(listingId);
-  }
-
-  @Post('list')
-  async listForResale(@Body() dto: ResaleListingDto, @CurrentUser() user: User) {
-    return this.resaleService.listForResale(dto, user);
+  async getMyListings(@CurrentUser() user: User) {
+    return this.resaleService.getUserListings(user.id);
   }
 
   @Post(':listingId/lock')
-  async lockForPurchase(
+  async lockListing(
     @Param('listingId') listingId: string,
     @CurrentUser() user: User,
   ) {
-    return this.resaleService.lockForPurchase(listingId, user);
+    return this.resaleService.lockListing(listingId, user);
   }
 
-  @Post(':listingId/purchase')
-  async completePurchase(
+  @Post(':listingId/payment')
+  async initiatePayment(
     @Param('listingId') listingId: string,
+    @Body('provider') provider: PaymentProvider,
     @CurrentUser() user: User,
   ) {
-    return this.resaleService.completePurchase(listingId, user);
+    return this.resaleService.initiateResalePayment(listingId, user, provider || PaymentProvider.STRIPE);
   }
 
-  @Post(':listingId/cancel')
+  @Post(':listingId/confirm-payment')
+  async confirmPayment(
+    @Param('listingId') listingId: string,
+    @Body('paymentIntentId') paymentIntentId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.resaleService.confirmResalePayment(paymentIntentId, listingId, user.id);
+  }
+
+  @Delete(':listingId')
   async cancelListing(
     @Param('listingId') listingId: string,
     @CurrentUser() user: User,
   ) {
-    return this.resaleService.cancelListing(listingId, user);
+    await this.resaleService.cancelListing(listingId, user);
+    return { message: 'Listing cancelled' };
   }
 }
