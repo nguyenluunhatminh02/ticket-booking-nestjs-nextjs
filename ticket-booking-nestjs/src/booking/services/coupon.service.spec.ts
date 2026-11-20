@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CouponService } from './coupon.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ReservationStatus, DiscountType } from '../entities/enums';
+import { CreateCouponDto } from '../dto/request/create-coupon.dto';
 
 describe('CouponService', () => {
   let service: CouponService;
@@ -107,12 +108,26 @@ describe('CouponService', () => {
   describe('createCoupon', () => {
     it('should reject duplicate coupon code', async () => {
       prisma.coupon.findUnique.mockResolvedValue({ id: 'existing' });
-      await expect(service.createCoupon({ code: 'DUP', discountType: DiscountType.FIXED_AMOUNT, discountValue: 5 } as any, { id: 'admin' })).rejects.toThrow(BadRequestException);
+      const dto: CreateCouponDto = {
+        code: 'DUP',
+        discountType: DiscountType.FIXED_AMOUNT as any,
+        discountValue: 5,
+      };
+      await expect(
+        service.createCoupon(dto, { id: 'admin' }),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should reject percentage > 100', async () => {
       prisma.coupon.findUnique.mockResolvedValue(null);
-      await expect(service.createCoupon({ code: 'NEW', discountType: DiscountType.PERCENTAGE, discountValue: 150 } as any, { id: 'admin' })).rejects.toThrow(BadRequestException);
+      const dto: CreateCouponDto = {
+        code: 'NEW',
+        discountType: DiscountType.PERCENTAGE as any,
+        discountValue: 150,
+      };
+      await expect(
+        service.createCoupon(dto, { id: 'admin' }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

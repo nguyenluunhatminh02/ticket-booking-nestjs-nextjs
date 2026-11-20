@@ -149,11 +149,15 @@ describe('PaymentService', () => {
     });
 
     it('should reject unauthorized user', async () => {
+      mockPrisma.reservation.findUnique.mockResolvedValue({ id: 'res-1', items: [] });
+      mockPrisma.resaleListing = { findFirst: jest.fn().mockResolvedValue(null) };
       mockPrisma.payment.findFirst.mockResolvedValue({ ...payment, userId: 'other' });
       await expect(service.refundPayment('res-1', 'user-1')).rejects.toThrow(BadRequestException);
     });
 
     it('should return idempotently for already-refunded payment', async () => {
+      mockPrisma.reservation.findUnique.mockResolvedValue({ id: 'res-1', items: [] });
+      mockPrisma.resaleListing = { findFirst: jest.fn().mockResolvedValue(null) };
       mockPrisma.payment.findFirst.mockResolvedValue({ ...payment, status: PaymentStatus.REFUNDED });
       const result = await service.refundPayment('res-1', 'user-1');
       expect(result.status).toBe(PaymentStatus.REFUNDED);
