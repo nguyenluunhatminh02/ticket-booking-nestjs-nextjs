@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PaymentStatus, PaymentProvider, ReservationStatus } from '../entities/enums';
+import { PaymentStatus, PaymentProvider, ReservationStatus, ResaleStatus } from '../entities/enums';
 import { InitiatePaymentDto } from '../dto';
 import { PaymentResponseDto } from '../dto/response/payment-response.dto';
 import { ReservationService } from './reservation.service';
@@ -82,6 +82,20 @@ export class PaymentService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // Cancel old pending payments on Stripe before marking them failed
+      const oldPayments = await tx.payment.findMany({
+        where: { reservationId: dto.reservationId, status: PaymentStatus.PENDING },
+      });
+      for (const oldPayment of oldPayments) {
+        if (oldPayment.providerPaymentId && this.stripeClient) {
+          try {
+            await this.stripeClient.paymentIntents.cancel(oldPayment.providerPaymentId);
+          } catch (err: any) {
+            this.logger.warn(`Failed to cancel Stripe PaymentIntent ${oldPayment.providerPaymentId}: ${err.message}`);
+          }
+        }
+      }
+
       await tx.payment.updateMany({
         where: { reservationId: dto.reservationId, status: PaymentStatus.PENDING },
         data: { status: PaymentStatus.FAILED, failureReason: 'Replaced by new payment' },
@@ -179,6 +193,28 @@ export class PaymentService {
   }
 
   async refundPayment(reservationId: string, userId: string): Promise<PaymentResponseDto> {
+    // Check if any tickets from this reservation have been resold
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      include: { items: true },
+    });
+    if (!reservation) throw new NotFoundException('Reservation not found');
+
+    const ticketIds = reservation.items.map((i: any) => i.ticketId).filter(Boolean);
+    if (ticketIds.length > 0) {
+      const resoldTickets = await this.prisma.resaleListing.findFirst({
+        where: {
+          ticketId: { in: ticketIds },
+          status: ResaleStatus.SOLD,
+        },
+      });
+      if (resoldTickets) {
+        throw new BadRequestException(
+          'Cannot refund: one or more tickets from this reservation have been resold',
+        );
+      }
+    }
+
     const payment = await this.prisma.payment.findFirst({
       where: {
         reservationId,

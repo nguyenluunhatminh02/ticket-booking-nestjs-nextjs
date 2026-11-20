@@ -348,6 +348,14 @@ export class ReservationService {
         });
       }
 
+      // Release coupon usage if reservation had a coupon
+      if (reservation.couponId) {
+        await client.coupon.update({
+          where: { id: reservation.couponId },
+          data: { currentUses: { decrement: 1 } },
+        });
+      }
+
       const tierIds = [...new Set(items.map((i: any) => i.tierId))] as string[];
       for (const tierId of tierIds) {
         const count = items.filter((i: any) => i.tierId === tierId).length;
