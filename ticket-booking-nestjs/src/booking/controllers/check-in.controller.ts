@@ -41,7 +41,7 @@ export class CheckInController {
       }
     }
 
-    return this.checkInService.checkIn(dto.ticketCode, user.id);
+    return this.checkInService.checkIn(dto, user);
   }
 
   @Roles('ROLE_ADMIN', 'ROLE_ORGANIZER')

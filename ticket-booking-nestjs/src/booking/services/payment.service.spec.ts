@@ -23,7 +23,12 @@ describe('PaymentService', () => {
 
     mockPrisma = {
       payment: mockTx.payment,
-      reservation: mockTx.reservation,
+      reservation: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'res-1', items: [] }),
+      },
+      resaleListing: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       $transaction: jest.fn((fn: any) => fn(mockTx)),
     };
 
