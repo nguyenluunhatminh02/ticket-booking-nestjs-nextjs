@@ -68,15 +68,18 @@ export class ResaleController {
     return this.resaleService.confirmResalePayment(paymentIntentId, listingId, user.id);
   }
 
-  @Post(':listingId/purchase')
-  async purchaseListing(
+  @Get(':listingId')
+  async getListingDetails(@Param('listingId') listingId: string) {
+    return this.resaleService.getListingDetails(listingId);
+  }
+
+  @Post(':listingId/cancel')
+  async cancelListingPost(
     @Param('listingId') listingId: string,
     @CurrentUser() user: User,
   ) {
-    // Demo-flow endpoint: creates a COMPLETED payment record and transfers the ticket
-    // in one step, so the frontend can complete purchase without a real Stripe checkout.
-    // For production with real Stripe, use the /payment + /confirm-payment flow.
-    return this.resaleService.demoDirectPurchase(listingId, user);
+    await this.resaleService.cancelListing(listingId, user);
+    return { message: 'Listing cancelled' };
   }
 
   @Delete(':listingId')

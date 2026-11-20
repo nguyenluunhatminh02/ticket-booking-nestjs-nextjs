@@ -9,20 +9,22 @@ describe('PaymentService', () => {
   let reservationService: any;
   let ticketService: any;
   let configService: any;
+  let resaleService: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
 
     mockTx = {
-      payment: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+      payment: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUnique: jest.fn() },
       reservation: { findUnique: jest.fn() },
-      ticket: { findMany: jest.fn(), updateMany: jest.fn() },
+      ticket: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
       $queryRaw: jest.fn(),
       $executeRaw: jest.fn(),
     };
 
     mockPrisma = {
       payment: mockTx.payment,
+      ticket: mockTx.ticket,
       reservation: {
         findUnique: jest.fn().mockResolvedValue({ id: 'res-1', items: [] }),
       },
@@ -43,6 +45,10 @@ describe('PaymentService', () => {
       issueTicketsForReservation: jest.fn(),
     };
 
+    resaleService = {
+      completeResaleTransfer: jest.fn().mockResolvedValue({}),
+    };
+
     configService = {
       get: jest.fn((key: string) => {
         if (key === 'STRIPE_SECRET_KEY') return 'sk_test_mock';
@@ -56,6 +62,7 @@ describe('PaymentService', () => {
       reservationService as any,
       ticketService as any,
       configService as any,
+      resaleService as any,
     );
   });
 
@@ -149,15 +156,11 @@ describe('PaymentService', () => {
     });
 
     it('should reject unauthorized user', async () => {
-      mockPrisma.reservation.findUnique.mockResolvedValue({ id: 'res-1', items: [] });
-      mockPrisma.resaleListing = { findFirst: jest.fn().mockResolvedValue(null) };
       mockPrisma.payment.findFirst.mockResolvedValue({ ...payment, userId: 'other' });
       await expect(service.refundPayment('res-1', 'user-1')).rejects.toThrow(BadRequestException);
     });
 
     it('should return idempotently for already-refunded payment', async () => {
-      mockPrisma.reservation.findUnique.mockResolvedValue({ id: 'res-1', items: [] });
-      mockPrisma.resaleListing = { findFirst: jest.fn().mockResolvedValue(null) };
       mockPrisma.payment.findFirst.mockResolvedValue({ ...payment, status: PaymentStatus.REFUNDED });
       const result = await service.refundPayment('res-1', 'user-1');
       expect(result.status).toBe(PaymentStatus.REFUNDED);
@@ -215,7 +218,10 @@ describe('PaymentService', () => {
     });
 
     it('duplicate resale webhook: does not transfer twice (FOR UPDATE misses already-completed payment)', async () => {
-      // Second webhook arrives: FOR UPDATE query returns empty because payment is already COMPLETED
+      // Re-create resaleService fresh so we have a pristine mock with no history
+      const freshResaleService = { completeResaleTransfer: jest.fn() };
+      (service as any).resaleService = freshResaleService;
+
       (service as any).stripeClient = {
         webhooks: {
           constructEvent: jest.fn().mockReturnValue({
@@ -229,7 +235,7 @@ describe('PaymentService', () => {
       await service.handleStripeWebhook('{}', 'sig');
 
       expect(mockTx.payment.update).not.toHaveBeenCalled();
-      expect((service as any).resaleService.completeResaleTransfer).not.toHaveBeenCalled();
+      expect(freshResaleService.completeResaleTransfer).not.toHaveBeenCalled();
     });
 
     it('regular reservation webhook: confirms reservation and issues tickets', async () => {

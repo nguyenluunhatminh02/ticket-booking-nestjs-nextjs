@@ -3,6 +3,8 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PaymentStatus, PaymentProvider, ReservationStatus, ResaleStatus } from '../entities/enums';
@@ -11,6 +13,7 @@ import { PaymentResponseDto } from '../dto/response/payment-response.dto';
 import { ReservationService } from './reservation.service';
 import { TicketService } from './ticket.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ResaleService } from './resale.service';
 
 @Injectable()
 export class PaymentService {
@@ -22,6 +25,8 @@ export class PaymentService {
     private reservationService: ReservationService,
     private ticketService: TicketService,
     private configService: ConfigService,
+    @Inject(forwardRef(() => ResaleService))
+    private resaleService: ResaleService,
   ) {
     const stripeKey = this.configService.get<string>('STRIPE_SECRET_KEY');
     if (stripeKey && !stripeKey.startsWith('your-')) {
@@ -297,12 +302,12 @@ export class PaymentService {
         data: { status: PaymentStatus.COMPLETED, completedAt: new Date() },
       });
 
-      // Handle based on payment type
+      // Fulfill the payment according to its type. completeResaleTransfer is
+      // idempotent, so concurrent webhooks / API confirms for the same listing
+      // cannot produce duplicate tickets.
       if (payment.resale_listing_id) {
-        // Resale payment - handled by ResaleService webhook
-        this.logger.log(`Resale payment completed via webhook: ${payment.resale_listing_id}`);
+        await this.resaleService.completeResaleTransfer(payment, tx);
       } else if (payment.reservation_id) {
-        // Regular reservation payment
         await this.reservationService.confirmReservation(payment.reservation_id, tx);
         const reservation = await this.reservationService.getReservationEntity(
           payment.reservation_id,
