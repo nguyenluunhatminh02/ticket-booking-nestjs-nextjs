@@ -221,6 +221,7 @@ export class ResaleService {
         where: { id: listingId },
         include: { originalTicket: { include: { event: { include: { venue: true } }, tier: true } } },
       });
+      if (!listing) throw new NotFoundException('Listing not found');
       return this.toResponse(listing, listing.originalTicket);
     }
     if (payment.status !== PaymentStatus.PENDING) {
