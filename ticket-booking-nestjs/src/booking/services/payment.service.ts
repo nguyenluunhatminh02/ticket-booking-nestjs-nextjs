@@ -40,12 +40,13 @@ export class PaymentService {
   }
 
   getAvailableProviders(): any[] {
+    // Only advertise providers that can actually initiate and confirm a payment.
+    // PayPal/PayOS are not implemented yet, so exposing them here sends users
+    // into a checkout flow that is guaranteed to be rejected.
     const providers = [];
     if (this.stripeClient) {
       providers.push({ provider: 'STRIPE', displayName: 'Credit/Debit Card' });
     }
-    providers.push({ provider: 'PAYPAL', displayName: 'PayPal' });
-    providers.push({ provider: 'PAYOS', displayName: 'Bank Transfer (VN)' });
     return providers;
   }
 
@@ -329,10 +330,15 @@ export class PaymentService {
     }
 
     if (refundRequired) {
-      await this.resaleService.refundPaymentViaStripe(refundRequired);
-      throw new BadRequestException('Resale transfer failed; payment refunded');
+      const refunded = await this.resaleService.refundPaymentViaStripe(refundRequired);
+      if (refunded) {
+        throw new BadRequestException('Resale transfer failed; payment refunded');
+      }
+      throw new BadRequestException('Resale transfer failed; refund could not be issued');
     }
   }
+
+  private paypalToken: { value: string; expiresAt: number } | null = null;
 
   /**
    * Verifies a PayPal webhook through PayPal's verification API and marks
@@ -340,37 +346,53 @@ export class PaymentService {
    * exist before; the frontend proxy used to receive a 404 from the backend.
    */
   async handlePaypalWebhook(payload: string, headers: Record<string, string>): Promise<void> {
+    // Validate the unauthenticated request BEFORE any outbound network call.
+    let event: any;
+    try {
+      event = JSON.parse(payload);
+    } catch {
+      throw new BadRequestException('Invalid PayPal webhook payload');
+    }
+    if (!event || typeof event !== 'object' || !event.event_type || !event.resource) {
+      throw new BadRequestException('Invalid PayPal webhook payload');
+    }
+    const requiredHeaders = [
+      'paypal-auth-algo', 'paypal-cert-url', 'paypal-transmission-id',
+      'paypal-transmission-sig', 'paypal-transmission-time',
+    ];
+    if (requiredHeaders.some((h) => !headers?.[h])) {
+      throw new BadRequestException('Missing PayPal verification headers');
+    }
+
     const clientId = this.configService.get<string>('PAYPAL_CLIENT_ID');
     const clientSecret = this.configService.get<string>('PAYPAL_CLIENT_SECRET');
     if (!clientId || !clientSecret) {
       throw new BadRequestException('PayPal webhook is not configured');
     }
 
-    const apiBase = this.configService.get<string>('PAYPAL_API_URL') ||
+    // Never send credentials to an arbitrary host configured via env.
+    const configured = this.configService.get<string>('PAYPAL_API_URL') ||
       'https://api-m.sandbox.paypal.com';
-
-    // 1. Obtain an access token for the verification API.
-    const authRes = await fetch(`${apiBase}/v1/oauth2/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization: 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
-      },
-      body: 'grant_type=client_credentials',
-    });
-    if (!authRes.ok) {
-      this.logger.error(`PayPal token request failed: ${authRes.status}`);
-      throw new BadRequestException('PayPal webhook verification failed');
+    let apiBase: URL;
+    try {
+      apiBase = new URL(configured);
+    } catch {
+      throw new BadRequestException('Invalid PayPal API URL');
     }
-    const auth = await authRes.json() as { access_token?: string };
-    if (!auth.access_token) throw new BadRequestException('PayPal webhook verification failed');
+    const host = apiBase.hostname.toLowerCase();
+    if (apiBase.protocol !== 'https:' || !(host === 'api.paypal.com' || host.endsWith('.paypal.com'))) {
+      throw new BadRequestException('Invalid PayPal API URL');
+    }
+    const base = apiBase.origin;
 
-    // 2. Ask PayPal to verify the transmitted signature.
-    const verifyRes = await fetch(`${apiBase}/v1/notifications/verify-webhook-signature`, {
+    const accessToken = await this.getPaypalAccessToken(base, clientId, clientSecret);
+
+    // Ask PayPal to verify the transmitted signature.
+    const verifyRes = await fetch(`${base}/v1/notifications/verify-webhook-signature`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${auth.access_token}`,
+        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
         auth_algo: headers['paypal-auth-algo'],
@@ -379,7 +401,7 @@ export class PaymentService {
         transmission_sig: headers['paypal-transmission-sig'],
         transmission_time: headers['paypal-transmission-time'],
         webhook_id: this.configService.get<string>('PAYPAL_WEBHOOK_ID'),
-        webhook_event: JSON.parse(payload),
+        webhook_event: event,
       }),
     });
     if (!verifyRes.ok) {
@@ -392,29 +414,68 @@ export class PaymentService {
       throw new BadRequestException('Invalid PayPal webhook signature');
     }
 
-    // 3. Process only successful capture events.
-    const event = JSON.parse(payload);
+    // Process only successful capture events.
     if (event.event_type !== 'PAYMENT.CAPTURE.COMPLETED') return;
     const captureId = event.resource?.id || event.resource?.supplementary_data?.related_ids?.order_id;
     if (!captureId) return;
 
-    await this.prisma.$transaction(async (tx) => {
-      const payment = await tx.payment.findFirst({
-        where: { provider: PaymentProvider.PAYPAL, providerPaymentId: captureId, status: PaymentStatus.PENDING },
-      });
-      if (!payment) return;
-      await tx.payment.update({
-        where: { id: payment.id },
-        data: { status: PaymentStatus.COMPLETED, completedAt: new Date() },
-      });
-      if (payment.reservationId) {
-        await this.reservationService.confirmReservation(payment.reservationId, tx);
-        const reservation = await this.reservationService.getReservationEntity(payment.reservationId, tx);
-        await this.ticketService.issueTicketsForReservation(reservation, tx);
-      } else if ((payment as any).resale_listing_id) {
-        await this.resaleService.completeResaleTransfer(payment, tx);
+    let refundRequired: any = null;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const payment = await tx.payment.findFirst({
+          where: { provider: PaymentProvider.PAYPAL, providerPaymentId: captureId, status: PaymentStatus.PENDING },
+        });
+        if (!payment) return;
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { status: PaymentStatus.COMPLETED, completedAt: new Date() },
+        });
+        if (payment.reservationId) {
+          await this.reservationService.confirmReservation(payment.reservationId, tx);
+          const reservation = await this.reservationService.getReservationEntity(payment.reservationId, tx);
+          await this.ticketService.issueTicketsForReservation(reservation, tx);
+        } else if ((payment as any).resale_listing_id) {
+          await this.resaleService.completeResaleTransfer(payment, tx);
+        }
+      }, { isolationLevel: 'Serializable' });
+    } catch (err: any) {
+      if (err instanceof ResaleRefundRequiredException) {
+        refundRequired = err.paymentForRefund;
+      } else {
+        throw err;
       }
-    }, { isolationLevel: 'Serializable' });
+    }
+    if (refundRequired) {
+      const refunded = await this.resaleService.refundPaymentViaStripe(refundRequired);
+      if (!refunded) throw new BadRequestException('Resale transfer failed; refund could not be issued');
+      throw new BadRequestException('Resale transfer failed; payment refunded');
+    }
+  }
+
+  private async getPaypalAccessToken(base: string, clientId: string, clientSecret: string): Promise<string> {
+    const now = Date.now();
+    if (this.paypalToken && this.paypalToken.expiresAt > now + 60_000) {
+      return this.paypalToken.value;
+    }
+    const authRes = await fetch(`${base}/v1/oauth2/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
+      },
+      body: 'grant_type=client_credentials',
+    });
+    if (!authRes.ok) {
+      this.logger.error(`PayPal token request failed: ${authRes.status}`);
+      throw new BadRequestException('PayPal webhook verification failed');
+    }
+    const auth = await authRes.json() as { access_token?: string; expires_in?: number };
+    if (!auth.access_token) throw new BadRequestException('PayPal webhook verification failed');
+    this.paypalToken = {
+      value: auth.access_token,
+      expiresAt: now + ((auth.expires_in ?? 3600) * 1000),
+    };
+    return auth.access_token;
   }
 
   toResponse(p: any): PaymentResponseDto {

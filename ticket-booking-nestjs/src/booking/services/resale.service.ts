@@ -285,78 +285,14 @@ export class ResaleService {
         throw new ConflictException('Payment state changed');
       }
 
-      // Mark payment completed
+      // Mark payment completed, then reuse the SINGLE shared transfer path.
+      // completeResaleTransfer locks the listing and is idempotent, so the
+      // webhook and API-confirm paths cannot diverge or double-transfer.
       await tx.payment.update({
         where: { id: payment.id },
         data: { status: PaymentStatus.COMPLETED, completedAt: new Date() },
       });
-
-      // Lock listing and verify state
-      const [listing] = await tx.$queryRaw<any[]>`
-        SELECT * FROM resale_listings WHERE id = ${listingId}::uuid FOR UPDATE
-      `;
-      if (!listing) throw new NotFoundException('Listing not found');
-      if (listing.status !== ResaleStatus.LOCKED) {
-        throw new ConflictException('Listing is no longer locked');
-      }
-      if (listing.buyer_id !== buyerId) {
-        throw new BadRequestException('Not the buyer for this listing');
-      }
-      if (listing.lock_expires_at && new Date(listing.lock_expires_at) < new Date()) {
-        throw new ConflictException('Purchase lock has expired');
-      }
-
-      // Verify original ticket still valid
-      const oldTicket = await tx.ticket.findUnique({
-        where: { id: listing.ticket_id },
-        include: { event: { include: { venue: true } }, tier: true },
-      });
-      if (!oldTicket || oldTicket.status !== TicketStatus.VALID) {
-        throw new ConflictException('Original ticket is no longer valid');
-      }
-      // Cancel old ticket
-      await tx.ticket.update({
-        where: { id: oldTicket.id },
-        data: { status: TicketStatus.CANCELLED, cancelledAt: new Date() },
-      });
-
-      // Issue new ticket to buyer
-      const newTicketCode = 'TKT-' + uuidv4().replace(/-/g, '').substring(0, 8).toUpperCase();
-      const savedTicket = await tx.ticket.create({
-        data: {
-          ticketCode: newTicketCode,
-          reservationId: oldTicket.reservationId,
-          userId: buyerId,
-          eventId: oldTicket.eventId,
-          tierId: oldTicket.tierId,
-          seatId: oldTicket.seatId,
-          qrCodeData: JSON.stringify({ ticketCode: newTicketCode, eventId: oldTicket.eventId }),
-          status: TicketStatus.VALID,
-          tierName: oldTicket.tierName,
-          seatLabel: oldTicket.seatLabel,
-          price: Number(listing.asking_price),
-          currency: listing.currency,
-        },
-      });
-
-      // Mark listing sold
-      const saved = await tx.resaleListing.update({
-        where: { id: listingId },
-        data: {
-          status: ResaleStatus.SOLD,
-          soldAt: new Date(),
-          newTicketId: savedTicket.id,
-        },
-        include: {
-          originalTicket: {
-            include: { event: { include: { venue: true } }, tier: true },
-          },
-        },
-      });
-
-      const resp = this.toResponse(saved, saved.originalTicket);
-      resp.newTicketCode = newTicketCode;
-      return resp;
+      return await this.completeResaleTransfer(payment, tx);
     }, { isolationLevel: 'Serializable' });
   }
 
@@ -467,20 +403,29 @@ export class ResaleService {
   }
 
   /**
-   * Best-effort Stripe refund. Failures are logged; the caller decides
-   * whether to roll back the payment state.
+   * Issues the Stripe refund with a deterministic idempotency key and marks
+   * the payment REFUNDED in the database. Throws on failure so the caller
+   * never reports a refund that did not happen. Returns false when Stripe is
+   * not configured (nothing to refund).
    */
-  async refundPaymentViaStripe(payment: any): Promise<void> {
-    if (!this.stripeClient || !payment?.provider_payment_id) return;
+  async refundPaymentViaStripe(payment: any): Promise<boolean> {
+    if (!this.stripeClient || !payment?.provider_payment_id) return false;
     try {
-      // Idempotency key prevents a second refund if the webhook is retried.
+      // Idempotency key prevents a second refund even if the webhook is retried.
       await this.stripeClient.refunds.create(
         { payment_intent: payment.provider_payment_id },
         { idempotencyKey: `resale-refund-${payment.id}` },
       );
+      // Persist the terminal state so retrying webhooks skip this payment.
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.REFUNDED, failureReason: 'Resale transfer failed; auto-refunded' },
+      });
       this.logger.warn(`Auto-refunded resale payment ${payment.id}`);
+      return true;
     } catch (err: any) {
       this.logger.error(`Failed to auto-refund payment ${payment.id}: ${err.message}`);
+      throw err;
     }
   }
 

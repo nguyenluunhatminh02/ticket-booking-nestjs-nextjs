@@ -492,7 +492,7 @@ async reserveTickets(dto, user) {
   - Order Summary (tier, seat label, price per item, total)
   - Countdown timer (15 phút, hiển thị MM:SS)
   - Coupon code input + Check/Apply button
-  - Payment method selection (STRIPE / PAYPAL / PAYOS)
+  - Payment method selection (hiện chỉ STRIPE được bật; PAYPAL/PAYOS chưa được hỗ trợ bởi `initiatePayment`)
   - Pay button với total amount
   - Cancel Reservation button
 
@@ -801,9 +801,9 @@ async refundPayment(reservationId, userId) {
 
 | Method | Endpoint | Auth | Mô tả |
 |--------|----------|------|--------|
-| `POST` | `/check-in` | JWT | Check-in vé (FOR UPDATE lock) |
-| `GET` | `/check-in/event/:id` | JWT+Admin | Danh sách check-ins |
-| `GET` | `/check-in/event/:id/count` | JWT+Admin | Đếm check-ins thành công |
+| `POST` | `/check-in` | JWT+Admin/Organizer | Check-in vé (FOR UPDATE lock; organizer chỉ được check-in vé của event mình) |
+| `GET` | `/check-in/event/:id` | JWT+Admin/Organizer | Danh sách check-ins (organizer chỉ xem event mình) |
+| `GET` | `/check-in/event/:eventId/count` | JWT+Admin/Organizer | Đếm check-ins thành công (organizer chỉ xem event mình) |
 
 ### 5.9 Resale APIs
 
@@ -815,7 +815,8 @@ async refundPayment(reservationId, userId) {
 | `GET` | `/resale/:id` | Public | Chi tiết listing |
 | `POST` | `/resale/list` | JWT | **Đăng bán vé** (max 150%) |
 | `POST` | `/resale/:id/lock` | JWT | **Lock listing** (10 phút) |
-| `POST` | `/resale/:id/purchase` | JWT | **Mua vé** (cancel old, issue new) |
+| `POST` | `/resale/:id/payment` | JWT | **Bước 1 mua vé**: tạo Stripe PaymentIntent cho listing |
+| `POST` | `/resale/:id/confirm-payment` | JWT | **Bước 2 mua vé**: xác nhận `paymentIntentId`, cancel old ticket & issue new ticket |
 | `POST` | `/resale/:id/cancel` | JWT | Hủy listing |
 
 ### 5.10 WebSocket Events
@@ -849,7 +850,7 @@ async refundPayment(reservationId, userId) {
 
 | Method | Logic |
 |--------|-------|
-| `getAvailableProviders()` | Check Stripe key configured → return list |
+| `getAvailableProviders()` | Check Stripe key configured → chỉ trả về STRIPE. PAYPAL/PAYOS chưa được implement (`initiatePayment` reject) nên không được advertise, dù enum vẫn định nghĩa cả ba. |
 | `initiatePayment()` | Cancel old payments → extend expiry 30min → create Stripe PaymentIntent → save payment record |
 | `confirmStripePayment()` | **Serializable TX**: Idempotent check → lock payment FOR UPDATE → COMPLETED → confirm reservation → issue tickets |
 | `refundPayment()` | payment REFUNDED → release reservation → restore seats/counts |

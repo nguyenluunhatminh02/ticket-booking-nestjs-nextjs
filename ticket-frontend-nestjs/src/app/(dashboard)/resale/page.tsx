@@ -14,11 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
 import {
   Ticket,
   ShoppingCart,
   Tag,
   Clock,
+  CreditCard,
   AlertCircle,
   ChevronLeft,
   ChevronRight,
@@ -71,11 +73,13 @@ function ListingCard({
   listing: ResaleListingResponse;
   variant: Tab;
   onLock?: (id: string) => void;
-  onPurchase?: (id: string) => void;
+  onPurchase?: (id: string, paymentIntentId: string) => void;
   onCancel?: (id: string) => void;
   isActing: boolean;
 }) {
   const { t } = useTranslation();
+  const [paymentIntentId, setPaymentIntentId] = useState("");
+  const [showPaymentInput, setShowPaymentInput] = useState(false);
   const discount = listing.originalPrice > 0
     ? Math.round(((listing.askingPrice - listing.originalPrice) / listing.originalPrice) * 100)
     : 0;
@@ -158,19 +162,65 @@ function ListingCard({
               </>
             )}
             {variant === "marketplace" && listing.status === "LOCKED" && (
-              <Button
-                size="sm"
-                disabled={isActing}
-                onClick={() => onPurchase?.(listing.id)}
-                className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
-              >
-                {isActing ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                ) : (
-                  <ShoppingCart className="h-4 w-4 mr-1" />
+              <div className="w-full sm:w-auto space-y-2">
+                {showPaymentInput && (
+                  <div className="space-y-1">
+                    <label
+                      htmlFor={`payment-intent-${listing.id}`}
+                      className="text-xs text-muted-foreground flex items-center gap-1"
+                    >
+                      <CreditCard className="h-3.5 w-3.5" />
+                      Stripe PaymentIntent ID
+                    </label>
+                    <Input
+                      id={`payment-intent-${listing.id}`}
+                      value={paymentIntentId}
+                      onChange={(event) => setPaymentIntentId(event.target.value)}
+                      placeholder="pi_..."
+                      disabled={isActing}
+                      className="h-8 text-xs"
+                    />
+                  </div>
                 )}
-                Complete Purchase
-              </Button>
+                {!showPaymentInput ? (
+                  <Button
+                    size="sm"
+                    disabled={isActing}
+                    onClick={() => setShowPaymentInput(true)}
+                    className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+                  >
+                    <ShoppingCart className="h-4 w-4 mr-1" />
+                    Complete Purchase
+                  </Button>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isActing}
+                      onClick={() => {
+                        setShowPaymentInput(false);
+                        setPaymentIntentId("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={isActing || !paymentIntentId.trim()}
+                      onClick={() => onPurchase?.(listing.id, paymentIntentId.trim())}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {isActing ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <ShoppingCart className="h-4 w-4 mr-1" />
+                      )}
+                      Confirm
+                    </Button>
+                  </div>
+                )}
+              </div>
             )}
             {variant === "my-listings" && listing.status === "LISTED" && (
               <Button
@@ -230,7 +280,8 @@ export default function ResaleMarketplacePage() {
   };
 
   const handleLock = (id: string) => handleAction((i) => lockMutation.mutateAsync(i), id);
-  const handlePurchase = (id: string) => handleAction((i) => purchaseMutation.mutateAsync(i), id);
+  const handlePurchase = (id: string, paymentIntentId: string) =>
+    handleAction(() => purchaseMutation.mutateAsync({ listingId: id, paymentIntentId }), id);
   const handleCancel = (id: string) => handleAction((i) => cancelMutation.mutateAsync(i), id);
 
   return (
