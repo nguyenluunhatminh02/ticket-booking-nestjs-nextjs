@@ -38,6 +38,18 @@ export class SeatLockService implements OnModuleInit {
     const lockKey = `seat-lock:${eventId}:${seatId}`;
     const userLocksKey = `user-seat-locks:${eventId}:${userId}`;
 
+    // Check if already locked by this user (idempotent)
+    const currentHolder = await this.redis.get(lockKey);
+    if (currentHolder === userId) {
+      await this.redis.expire(lockKey, 300);
+      return true;
+    }
+
+    // Check if locked by another user
+    if (currentHolder) {
+      return false;
+    }
+
     // Check if user already has too many locks
     const currentLocks = await this.redis.scard(userLocksKey);
     if (currentLocks >= 10) {
@@ -49,6 +61,7 @@ export class SeatLockService implements OnModuleInit {
     const result = await this.redis.set(lockKey, userId, 'EX', 300, 'NX');
     if (result === 'OK') {
       await this.redis.sadd(userLocksKey, seatId);
+      await this.redis.expire(userLocksKey, 360); // TTL slightly longer than lock TTL
       this.logger.debug(`Seat ${seatId} locked by user ${userId}`);
       return true;
     }
