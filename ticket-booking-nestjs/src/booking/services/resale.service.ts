@@ -3,7 +3,9 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Logger,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { v4 as uuidv4 } from 'uuid';
 import {
   ResaleStatus,
@@ -19,6 +21,7 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ResaleService {
+  private readonly logger = new Logger(ResaleService.name);
   private stripeClient: any;
 
   constructor(
@@ -376,11 +379,35 @@ export class ResaleService {
     if (listing.status === ResaleStatus.SOLD) {
       throw new BadRequestException('Cannot cancel a sold listing');
     }
+    if (listing.status === ResaleStatus.LOCKED) {
+      throw new BadRequestException(
+        'Cannot cancel a locked listing. Buyer may be in the process of payment.',
+      );
+    }
 
     await this.prisma.resaleListing.update({
       where: { id: listingId },
       data: { status: ResaleStatus.CANCELLED, cancelledAt: new Date() },
     });
+  }
+
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async expireLockedListings(): Promise<void> {
+    const now = new Date();
+    const expired = await this.prisma.resaleListing.updateMany({
+      where: {
+        status: ResaleStatus.LOCKED,
+        lockExpiresAt: { lt: now },
+      },
+      data: {
+        status: ResaleStatus.LISTED,
+        buyerId: null,
+        lockExpiresAt: null,
+      },
+    });
+    if (expired.count > 0) {
+      this.logger.log(`Expired ${expired.count} locked resale listings`);
+    }
   }
 
   toResponse(listing: any, ticket?: any): ResaleListingResponseDto {
