@@ -11,7 +11,7 @@ import {
   PaymentStatus,
   PaymentProvider,
 } from '../entities/enums';
-import { CreateResaleListingDto } from '../dto';
+import { ResaleListingDto } from '../dto';
 import { ResaleListingResponseDto } from '../dto/response/resale-listing-response.dto';
 import { PaymentResponseDto } from '../dto/response/payment-response.dto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -36,7 +36,7 @@ export class ResaleService {
     }
   }
 
-  async createListing(dto: CreateResaleListingDto, user: any): Promise<ResaleListingResponseDto> {
+  async createListing(dto: ResaleListingDto, user: any): Promise<ResaleListingResponseDto> {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id: dto.ticketId },
       include: {
@@ -72,12 +72,21 @@ export class ResaleService {
       );
     }
 
+    const platformFeePercent = 5;
+    const platformFeeAmount = (dto.askingPrice * platformFeePercent) / 100;
+    const sellerPayout = dto.askingPrice - platformFeeAmount;
+
     const saved = await this.prisma.resaleListing.create({
       data: {
         ticketId: dto.ticketId,
+        eventId: ticket.eventId,
         sellerId: user.id,
         askingPrice: dto.askingPrice,
+        originalPrice: Number(ticket.price),
         currency: ticket.currency || 'USD',
+        platformFeePercent,
+        platformFeeAmount,
+        sellerPayout,
         status: ResaleStatus.LISTED,
       },
     });
@@ -254,6 +263,7 @@ export class ResaleService {
             where: { id: listingId },
             include: { originalTicket: { include: { event: { include: { venue: true } }, tier: true } } },
           });
+          if (!listing) throw new NotFoundException('Listing not found');
           return this.toResponse(listing, listing.originalTicket);
         }
         throw new ConflictException('Payment state changed');
@@ -376,18 +386,25 @@ export class ResaleService {
     return {
       id: listing.id,
       ticketId: listing.ticketId,
+      eventId: listing.eventId,
       sellerId: listing.sellerId,
       sellerName: listing.seller
         ? `${listing.seller.firstName || ''} ${listing.seller.lastName || ''}`.trim() || 'Anonymous'
         : 'Anonymous',
       askingPrice: Number(listing.askingPrice),
+      originalPrice: Number(listing.originalPrice || 0),
+      platformFeePercent: Number(listing.platformFeePercent || 0),
+      platformFeeAmount: Number(listing.platformFeeAmount || 0),
+      sellerPayout: Number(listing.sellerPayout || 0),
       currency: listing.currency,
       status: listing.status,
       eventName: ticket?.event?.name ?? null,
+      eventCoverImageUrl: ticket?.event?.coverImageUrl ?? null,
       eventDate: ticket?.event?.eventDate ?? null,
       venueName: ticket?.event?.venue?.name ?? null,
-      tierName: ticket?.tierName ?? null,
+      tierName: ticket?.tierName ?? ticket?.tier?.name ?? null,
       seatLabel: ticket?.seatLabel ?? null,
+      buyerId: listing.buyerId ?? null,
       newTicketCode: null,
       lockExpiresAt: listing.lockExpiresAt,
       createdAt: listing.createdAt,

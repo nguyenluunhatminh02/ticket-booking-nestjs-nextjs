@@ -2,15 +2,18 @@ import {
   Controller,
   Post,
   Get,
-  Body,
   Param,
   Query,
+  Body,
   ForbiddenException,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { CurrentUser, Roles } from '../../common/decorators';
 import { User } from '../../auth/entities/user.entity';
 import { CheckInService } from '../services/check-in.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CheckInDto } from '../dto';
 
 @Controller('check-in')
 export class CheckInController {
@@ -22,10 +25,9 @@ export class CheckInController {
   @Roles('ROLE_ADMIN', 'ROLE_ORGANIZER')
   @Post()
   async checkIn(
-    @Body() dto: { ticketCode: string },
+    @Body() dto: CheckInDto,
     @CurrentUser() user: User,
   ) {
-    // Verify organizer owns the event for this ticket
     const roles: string[] = (user as any).roles || [];
     const isAdmin = roles.includes('ROLE_ADMIN');
 

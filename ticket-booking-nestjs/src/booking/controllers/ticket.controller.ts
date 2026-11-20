@@ -19,7 +19,7 @@ export class TicketController {
 
   @Get('my')
   async getMyTickets(@CurrentUser() user: User) {
-    return this.ticketService.getUserTickets(user.id);
+    return this.ticketService.getMyTickets(user.id, 0, 100);
   }
 
   @Roles('ROLE_ADMIN', 'ROLE_ORGANIZER')
