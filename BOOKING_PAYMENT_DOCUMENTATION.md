@@ -720,6 +720,53 @@ async refundPayment(reservationId, userId) {
 - Nếu success: Auto-redirect to `/reservations/:id` sau 5 giây countdown
 - Nếu error: Hiển thị error message + "Try again" button
 
+### 4.9 Seller Payout (Resale) — STATUS: SIMULATED / NOT INTEGRATED
+
+> **Important:** The seller payout in the resale flow is **recorded in the database only**.
+> It is **NOT** wired to Stripe Connect, Stripe Transfers, or any external payout provider.
+> No money is actually moved to the seller’s bank account or Stripe Connected Account
+> when a resale completes. The fields are bookkeeping placeholders for a future integration.
+
+**What the code does today (simulation only):**
+
+When a seller calls `POST /resale/list`, `ResaleService.listForResale()` computes and persists
+three numeric fields on the `ResaleListing` row:
+
+| Field | Formula | Meaning |
+|-------|---------|---------|
+| `platformFeePercent` | `5` (hard-coded) | Platform take rate (%) |
+| `platformFeeAmount` | `askingPrice * 5 / 100` | Amount the platform keeps |
+| `sellerPayout` | `askingPrice - platformFeeAmount` | Amount the seller *would* receive |
+
+When the buyer’s payment succeeds, `completePurchase()` transitions the listing to `SOLD`
+and re-issues the ticket to the buyer. The `sellerPayout` value is **not** sent anywhere —
+it remains a column on the listing row. The buyer’s full `askingPrice` is charged via the
+normal Stripe PaymentIntent and lands in the platform’s own Stripe account; no split,
+transfer, or Connected Account payout is created.
+
+**What a production integration would require (not implemented):**
+
+1. **Stripe Connect onboarding** — each seller must create a Stripe Connected Account
+   (Express or Custom) and complete KYC. The `User` model would need a `stripeAccountId`
+   column and an onboarding flow (`/v1/account_links`, `/v1/accounts/:id`).
+2. **Charge model change** — switch from a plain PaymentIntent to one of:
+   - *Destination charges* with `transfer_data.destination = seller.stripeAccountId` and
+     `application_fee_amount = platformFeeAmount`, or
+   - *Separate charges & transfers* via `stripe.transfers.create({ amount, currency,
+     destination: seller.stripeAccountId })` after the buyer’s charge succeeds.
+3. **Payout reconciliation** — a cron/job that reconciles `ResaleListing.sellerPayout`
+   rows with Stripe Transfer/Payout events, handles failures, and exposes a seller
+   dashboard (available balance, pending payout, payout history).
+4. **Refunds & disputes** — propagate `refundPayment()` through `stripe.refunds.create`
+   and reverse the corresponding transfer; handle chargebacks via Stripe webhooks
+   (`transfer.reversed`, `charge.dispute.*`).
+5. **Compliance & tax** — 1099-K / local tax reporting for sellers above thresholds,
+   terms of service, country/region restrictions, and sanctions screening.
+
+Until the above is built, **treat `sellerPayout` as an informational field only**.
+Operators must settle sellers out-of-band (e.g., manual bank transfer) if they choose
+to honor it.
+
 ---
 
 ## 5. API ENDPOINTS CHI TIẾT

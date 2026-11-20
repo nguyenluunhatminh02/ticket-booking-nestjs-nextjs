@@ -4,8 +4,10 @@ import {
   BadRequestException,
   ConflictException,
   Logger,
+  OnModuleDestroy,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import {
   ResaleStatus,
@@ -18,6 +20,7 @@ import { ResaleListingResponseDto } from '../dto/response/resale-listing-respons
 import { PaymentResponseDto } from '../dto/response/payment-response.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { runSerializableTransaction } from './prisma-transaction-retry';
 
 /**
  * Thrown inside a database transaction when an external Stripe refund is
@@ -31,10 +34,34 @@ export class ResaleRefundRequiredException extends ConflictException {
   }
 }
 
+/** 128 bits of randomness: 32 hex chars, keeping the human-readable TKT- prefix. */
+function generateTicketCode(): string {
+  return `TKT-${uuidv4().replace(/-/g, '').toUpperCase()}`;
+}
+
+function isTicketCodeCollision(error: any): boolean {
+  // Prisma P2002 = unique constraint violation; only retry when the ticket code is the culprit.
+  return error?.code === 'P2002'
+    && (error?.meta?.target == null || String(error.meta.target).includes('ticket'));
+}
+
+function isUniqueViolation(error: any): boolean {
+  // Structurally detect PrismaClientKnownRequestError P2002 so this works
+  // with mocked errors too, without importing the generated client types.
+  return error?.code === 'P2002';
+}
+
 @Injectable()
-export class ResaleService {
+export class ResaleService implements OnModuleDestroy {
   private readonly logger = new Logger(ResaleService.name);
   private stripeClient: any;
+  private redis: Redis | null = null;
+  private readonly releaseLeaderLockScript = `
+    if redis.call('GET', KEYS[1]) == ARGV[1] then
+      return redis.call('DEL', KEYS[1])
+    end
+    return 0
+  `;
 
   constructor(
     private prisma: PrismaService,
@@ -51,62 +78,125 @@ export class ResaleService {
     }
   }
 
+  private getRedis(): Redis {
+    if (!this.redis) {
+      this.redis = new Redis({
+        host: this.configService.get('REDIS_HOST', 'localhost'),
+        port: this.configService.get<number>('REDIS_PORT', 6379),
+        password: this.configService.get('REDIS_PASSWORD') || undefined,
+      });
+    }
+    return this.redis;
+  }
+
+  onModuleDestroy() {
+    this.redis?.disconnect();
+  }
+
+  /**
+   * Returns the lock token when acquired, false when another instance holds the
+   * lock (skip the cron), or null when Redis is unavailable (fail open: all cron
+   * writes are idempotent, so multiple instances may safely run the cleanup).
+   */
+  private async acquireLeaderLock(
+    key: string,
+    ttlMs: number,
+  ): Promise<string | false | null> {
+    const token = uuidv4();
+    try {
+      const acquired = await this.getRedis().set(key, token, 'PX', ttlMs, 'NX');
+      return acquired === 'OK' ? token : false;
+    } catch (err) {
+      this.logger.warn(`Leader lock ${key} unavailable: ${err.message}`);
+      return null;
+    }
+  }
+
+  private async releaseLeaderLock(key: string, token: string): Promise<void> {
+    try {
+      await this.getRedis().eval(this.releaseLeaderLockScript, 1, key, token);
+    } catch (err) {
+      this.logger.warn(`Failed to release leader lock ${key}: ${err.message}`);
+    }
+  }
+
   async createListing(dto: ResaleListingDto, user: any): Promise<ResaleListingResponseDto> {
-    const ticket = await this.prisma.ticket.findUnique({
-      where: { id: dto.ticketId },
-      include: {
-        event: { include: { venue: true } },
-        tier: true,
-      },
-    });
-    if (!ticket) throw new NotFoundException('Ticket not found');
-    if (ticket.userId !== user.id) {
-      throw new BadRequestException('Not authorized to resell this ticket');
+    try {
+      return await runSerializableTransaction(this.prisma, async (tx) => {
+        // Serialize concurrent createListing calls for the same ticket. The
+        // row lock is held until commit, so the second caller observes the
+        // first caller's committed listing when it runs its existence check.
+        const [lockedTicket] = await tx.$queryRaw<any[]>`
+          SELECT * FROM tickets WHERE id = ${dto.ticketId}::uuid FOR UPDATE
+        `;
+        const ticket = lockedTicket
+          ? await tx.ticket.findUnique({
+              where: { id: dto.ticketId },
+              include: {
+                event: { include: { venue: true } },
+                tier: true,
+              },
+            })
+          : null;
+        if (!ticket) throw new NotFoundException('Ticket not found');
+        if (ticket.userId !== user.id) {
+          throw new BadRequestException('Not authorized to resell this ticket');
+        }
+        if (ticket.status !== TicketStatus.VALID) {
+          throw new BadRequestException('Ticket is not valid for resale');
+        }
+
+        // Check if ticket already has an active listing. The partial unique
+        // index on (ticket_id) WHERE status IN ('LISTED','LOCKED') is the
+        // final guard against two concurrent listings slipping past this check.
+        const existing = await tx.resaleListing.findFirst({
+          where: {
+            ticketId: dto.ticketId,
+            status: { in: [ResaleStatus.LISTED, ResaleStatus.LOCKED] },
+          },
+        });
+        if (existing) {
+          throw new ConflictException('Ticket already has an active resale listing');
+        }
+
+        // Enforce anti-scalping: asking price cannot exceed original price * maxMarkup
+        const maxMarkup = 1.5; // 50% markup cap
+        const maxPrice = Number(ticket.price) * maxMarkup;
+        if (dto.askingPrice > maxPrice) {
+          throw new BadRequestException(
+            `Asking price cannot exceed ${maxMarkup * 100}% of original price (${maxPrice})`,
+          );
+        }
+
+        const platformFeePercent = 5;
+        const platformFeeAmount = (dto.askingPrice * platformFeePercent) / 100;
+        const sellerPayout = dto.askingPrice - platformFeeAmount;
+
+        const saved = await tx.resaleListing.create({
+          data: {
+            ticketId: dto.ticketId,
+            eventId: ticket.eventId,
+            sellerId: user.id,
+            askingPrice: dto.askingPrice,
+            originalPrice: Number(ticket.price),
+            currency: ticket.currency || 'USD',
+            platformFeePercent,
+            platformFeeAmount,
+            sellerPayout,
+            status: ResaleStatus.LISTED,
+          },
+        });
+
+        return this.toResponse(saved, ticket);
+      }, { logger: this.logger, label: 'Create resale listing' });
+    } catch (error) {
+      // P2002 from the partial unique index means another transaction won
+      // the race; surface it as the same conflict as the explicit check.
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('Ticket already has an active resale listing');
+      }
+      throw error;
     }
-    if (ticket.status !== TicketStatus.VALID) {
-      throw new BadRequestException('Ticket is not valid for resale');
-    }
-
-    // Check if ticket already has an active listing
-    const existing = await this.prisma.resaleListing.findFirst({
-      where: {
-        ticketId: dto.ticketId,
-        status: { in: [ResaleStatus.LISTED, ResaleStatus.LOCKED] },
-      },
-    });
-    if (existing) {
-      throw new ConflictException('Ticket already has an active resale listing');
-    }
-
-    // Enforce anti-scalping: asking price cannot exceed original price * maxMarkup
-    const maxMarkup = 1.5; // 50% markup cap
-    const maxPrice = Number(ticket.price) * maxMarkup;
-    if (dto.askingPrice > maxPrice) {
-      throw new BadRequestException(
-        `Asking price cannot exceed ${maxMarkup * 100}% of original price (${maxPrice})`,
-      );
-    }
-
-    const platformFeePercent = 5;
-    const platformFeeAmount = (dto.askingPrice * platformFeePercent) / 100;
-    const sellerPayout = dto.askingPrice - platformFeeAmount;
-
-    const saved = await this.prisma.resaleListing.create({
-      data: {
-        ticketId: dto.ticketId,
-        eventId: ticket.eventId,
-        sellerId: user.id,
-        askingPrice: dto.askingPrice,
-        originalPrice: Number(ticket.price),
-        currency: ticket.currency || 'USD',
-        platformFeePercent,
-        platformFeeAmount,
-        sellerPayout,
-        status: ResaleStatus.LISTED,
-      },
-    });
-
-    return this.toResponse(saved, ticket);
   }
 
   async getMarketplace(eventId?: string): Promise<ResaleListingResponseDto[]> {
@@ -268,7 +358,7 @@ export class ResaleService {
     }
 
     // Transfer ticket
-    return this.prisma.$transaction(async (tx) => {
+    return runSerializableTransaction(this.prisma, async (tx) => {
       const [lockedPayment] = await tx.$queryRaw<any[]>`
         SELECT * FROM payments WHERE id = ${payment.id}::uuid AND status = 'PENDING' FOR UPDATE
       `;
@@ -293,7 +383,7 @@ export class ResaleService {
         data: { status: PaymentStatus.COMPLETED, completedAt: new Date() },
       });
       return await this.completeResaleTransfer(payment, tx);
-    }, { isolationLevel: 'Serializable' });
+    }, { logger: this.logger, label: 'Confirm resale payment' });
   }
 
   async completePurchase(listingId: string, buyer: any): Promise<ResaleListingResponseDto> {
@@ -367,23 +457,33 @@ export class ResaleService {
       data: { status: TicketStatus.CANCELLED, cancelledAt: new Date() },
     });
 
-    const newTicketCode = 'TKT-' + uuidv4().replace(/-/g, '').substring(0, 8).toUpperCase();
-    const savedTicket = await tx.ticket.create({
-      data: {
-        ticketCode: newTicketCode,
-        reservationId: oldTicket.reservationId,
-        userId: buyerId,
-        eventId: oldTicket.eventId,
-        tierId: oldTicket.tierId,
-        seatId: oldTicket.seatId,
-        qrCodeData: JSON.stringify({ ticketCode: newTicketCode, eventId: oldTicket.eventId }),
-        status: TicketStatus.VALID,
-        tierName: oldTicket.tierName,
-        seatLabel: oldTicket.seatLabel,
-        price: Number(listing.asking_price),
-        currency: listing.currency,
-      },
-    });
+    let newTicketCode = '';
+    let savedTicket: any;
+    // A 128-bit code makes collisions negligible; retry a few times if one still occurs.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      newTicketCode = generateTicketCode();
+      try {
+        savedTicket = await tx.ticket.create({
+          data: {
+            ticketCode: newTicketCode,
+            reservationId: oldTicket.reservationId,
+            userId: buyerId,
+            eventId: oldTicket.eventId,
+            tierId: oldTicket.tierId,
+            seatId: oldTicket.seatId,
+            qrCodeData: JSON.stringify({ ticketCode: newTicketCode, eventId: oldTicket.eventId }),
+            status: TicketStatus.VALID,
+            tierName: oldTicket.tierName,
+            seatLabel: oldTicket.seatLabel,
+            price: Number(listing.asking_price),
+            currency: listing.currency,
+          },
+        });
+        break;
+      } catch (error: any) {
+        if (!isTicketCodeCollision(error) || attempt === 2) throw error;
+      }
+    }
 
     const saved = await tx.resaleListing.update({
       where: { id: listingId },
@@ -405,15 +505,21 @@ export class ResaleService {
   /**
    * Issues the Stripe refund with a deterministic idempotency key and marks
    * the payment REFUNDED in the database. Throws on failure so the caller
-   * never reports a refund that did not happen. Returns false when Stripe is
-   * not configured (nothing to refund).
+   * never reports a refund that did not happen. Payments loaded through raw
+   * SQL use snake_case columns, while Prisma queries return camelCase fields;
+   * both shapes must be refundable or a captured payment can silently escape
+   * refund (e.g. the PayPal webhook's reservation-not-payable path).
    */
   async refundPaymentViaStripe(payment: any): Promise<boolean> {
-    if (!this.stripeClient || !payment?.provider_payment_id) return false;
+    if (!this.stripeClient) {
+      throw new BadRequestException('Stripe is not configured; refund could not be issued');
+    }
+    const providerPaymentId = payment?.providerPaymentId ?? payment?.provider_payment_id;
+    if (!providerPaymentId) return false;
     try {
       // Idempotency key prevents a second refund even if the webhook is retried.
       await this.stripeClient.refunds.create(
-        { payment_intent: payment.provider_payment_id },
+        { payment_intent: providerPaymentId },
         { idempotencyKey: `resale-refund-${payment.id}` },
       );
       // Persist the terminal state so retrying webhooks skip this payment.
@@ -481,20 +587,35 @@ export class ResaleService {
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async expireLockedListings(): Promise<void> {
-    const now = new Date();
-    const expired = await this.prisma.resaleListing.updateMany({
-      where: {
-        status: ResaleStatus.LOCKED,
-        lockExpiresAt: { lt: now },
-      },
-      data: {
-        status: ResaleStatus.LISTED,
-        buyerId: null,
-        lockExpiresAt: null,
-      },
-    });
-    if (expired.count > 0) {
-      this.logger.log(`Expired ${expired.count} locked resale listings`);
+    const lockKey = 'cron:resale:expire-locked-listings';
+    const token = await this.acquireLeaderLock(lockKey, 290_000);
+    if (token === false) return;
+    if (token === null) {
+      this.logger.warn(
+        'Redis unavailable for resale listing lock; running idempotent cleanup anyway',
+      );
+    }
+
+    try {
+      const now = new Date();
+      const expired = await this.prisma.resaleListing.updateMany({
+        where: {
+          status: ResaleStatus.LOCKED,
+          lockExpiresAt: { lt: now },
+        },
+        data: {
+          status: ResaleStatus.LISTED,
+          buyerId: null,
+          lockExpiresAt: null,
+        },
+      });
+      if (expired.count > 0) {
+        this.logger.log(`Expired ${expired.count} locked resale listings`);
+      }
+    } finally {
+      if (typeof token === 'string') {
+        await this.releaseLeaderLock(lockKey, token);
+      }
     }
   }
 

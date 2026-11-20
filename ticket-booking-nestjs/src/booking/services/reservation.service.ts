@@ -4,8 +4,12 @@ import {
   BadRequestException,
   ConflictException,
   Logger,
+  OnModuleDestroy,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import Redis from 'ioredis';
+import { v4 as uuidv4 } from 'uuid';
 import {
   ReservationStatus,
   ReservationItemStatus,
@@ -23,15 +27,66 @@ import {
 import { User } from '../../auth/entities/user.entity';
 import { SeatLockService } from './seat-lock.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { runSerializableTransaction } from './prisma-transaction-retry';
 
 @Injectable()
-export class ReservationService {
+export class ReservationService implements OnModuleDestroy {
   private readonly logger = new Logger(ReservationService.name);
+  private redis: Redis | null = null;
+  private readonly releaseLeaderLockScript = `
+    if redis.call('GET', KEYS[1]) == ARGV[1] then
+      return redis.call('DEL', KEYS[1])
+    end
+    return 0
+  `;
 
   constructor(
     private prisma: PrismaService,
     private seatLockService: SeatLockService,
+    private configService: ConfigService,
   ) {}
+
+  private getRedis(): Redis {
+    if (!this.redis) {
+      this.redis = new Redis({
+        host: this.configService.get('REDIS_HOST', 'localhost'),
+        port: this.configService.get<number>('REDIS_PORT', 6379),
+        password: this.configService.get('REDIS_PASSWORD') || undefined,
+      });
+    }
+    return this.redis;
+  }
+
+  onModuleDestroy() {
+    this.redis?.disconnect();
+  }
+
+  /**
+   * Returns the lock token when acquired, false when another instance holds the
+   * lock (skip the cron), or null when Redis is unavailable (fail open: all cron
+   * writes are idempotent, so multiple instances may safely run the cleanup).
+   */
+  private async acquireLeaderLock(
+    key: string,
+    ttlMs: number,
+  ): Promise<string | false | null> {
+    const token = uuidv4();
+    try {
+      const acquired = await this.getRedis().set(key, token, 'PX', ttlMs, 'NX');
+      return acquired === 'OK' ? token : false;
+    } catch (err) {
+      this.logger.warn(`Leader lock ${key} unavailable: ${err.message}`);
+      return null;
+    }
+  }
+
+  private async releaseLeaderLock(key: string, token: string): Promise<void> {
+    try {
+      await this.getRedis().eval(this.releaseLeaderLockScript, 1, key, token);
+    } catch (err) {
+      this.logger.warn(`Failed to release leader lock ${key}: ${err.message}`);
+    }
+  }
 
   private getEffectivePrice(tier: any): number {
     const now = new Date();
@@ -42,6 +97,16 @@ export class ReservationService {
       return Number(tier.lastMinutePrice);
     }
     return Number(tier.price);
+  }
+
+  private getSeatPrice(seat: any, fallbackPrice: number): number {
+    // Raw seat rows expose snake_case columns; Prisma entities expose camelCase.
+    const rawOverride = seat?.price_override ?? seat?.priceOverride;
+    if (rawOverride === null || rawOverride === undefined || rawOverride === '') {
+      return fallbackPrice;
+    }
+    const override = Number(rawOverride);
+    return Number.isFinite(override) && override >= 0 ? override : fallbackPrice;
   }
 
   async reserveTickets(dto: ReserveTicketsDto, user: User): Promise<ReservationResponseDto> {
@@ -55,7 +120,7 @@ export class ReservationService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return runSerializableTransaction(this.prisma, async (tx) => {
       const [event] = await tx.$queryRaw<any[]>`
         SELECT * FROM events WHERE id = ${dto.eventId}::uuid FOR UPDATE
       `;
@@ -141,7 +206,9 @@ export class ReservationService {
         }
       }
 
-      const effectivePrice = this.getEffectivePrice(tier);
+      const tierPrice = this.getEffectivePrice(tier);
+      const seatPrices = seats.map((seat: any) => this.getSeatPrice(seat, tierPrice));
+      const totalAmount = Math.round(seatPrices.reduce((sum, price) => sum + price, 0) * 100) / 100;
       const seatIds = seats.map((s: any) => s.id);
 
       await tx.seat.updateMany({
@@ -168,7 +235,6 @@ export class ReservationService {
         });
       }
 
-      const totalAmount = Math.round(effectivePrice * seats.length * 100) / 100;
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
       const savedRes = await tx.reservation.create({
         data: {
@@ -183,13 +249,14 @@ export class ReservationService {
       });
 
       const items: any[] = [];
-      for (const seat of seats) {
+      for (let i = 0; i < seats.length; i++) {
+        const seat = seats[i];
         const item = await tx.reservationItem.create({
           data: {
             reservationId: savedRes.id,
             seatId: seat.id,
             tierId: dto.tierId,
-            priceAtBooking: effectivePrice,
+            priceAtBooking: seatPrices[i],
             status: ReservationItemStatus.RESERVED,
           },
         });
@@ -202,7 +269,7 @@ export class ReservationService {
 
       const eventForResponse = await tx.event.findUnique({ where: { id: dto.eventId } });
       return this.toResponse(savedRes, items, eventForResponse);
-    }, { isolationLevel: 'Serializable' });
+    }, { logger: this.logger, label: 'Reserve tickets' });
   }
 
   async getUserReservations(userId: string): Promise<ReservationResponseDto[]> {
@@ -403,6 +470,43 @@ export class ReservationService {
     return reservation;
   }
 
+  /**
+   * Re-fetch a reservation inside the caller's transaction and verify it is
+   * still payable. Used by payment webhooks so a webhook delivered after a
+   * reservation expired or was cancelled cannot confirm it and issue tickets.
+   * Throws BadRequestException when the reservation is no longer PENDING or
+   * its expiry has passed.
+   */
+  async assertReservationPayable(reservationId: string, tx?: any): Promise<void> {
+    const client = tx ?? this.prisma;
+    let reservation: any;
+    if (client.$queryRaw) {
+      const [locked] = await client.$queryRaw<any[]>`
+        SELECT id, status, expires_at FROM reservations WHERE id = ${reservationId}::uuid FOR UPDATE
+      `;
+      reservation = locked;
+    } else {
+      reservation = await client.reservation.findUnique({ where: { id: reservationId } });
+    }
+    if (!reservation) throw new NotFoundException('Reservation not found');
+
+    const status = String(reservation.status ?? reservation.status_value ?? '');
+    if (status !== ReservationStatus.PENDING) {
+      throw new BadRequestException('Reservation is not pending');
+    }
+
+    // A null (or absent) expiry means the reservation never expires and remains
+    // payable. Only a non-null expiry in the past (or malformed) is fatal; the
+    // status check above already rejects cancelled/confirmed reservations.
+    const expiresAtRaw = reservation.expires_at ?? reservation.expiresAt;
+    if (expiresAtRaw !== null && expiresAtRaw !== undefined) {
+      const expiresAt = new Date(expiresAtRaw).getTime();
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        throw new BadRequestException('Reservation has expired');
+      }
+    }
+  }
+
   async extendExpiry(reservation: any, minutes: number, tx?: any): Promise<void> {
     const client = tx ?? this.prisma;
     await client.reservation.update({
@@ -413,27 +517,42 @@ export class ReservationService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async cleanupExpiredReservations(): Promise<void> {
-    const expiredReservations = await this.prisma.reservation.findMany({
-      where: {
-        status: ReservationStatus.PENDING,
-        expiresAt: { lt: new Date() },
-      },
-      include: {
-        items: { include: { seat: true, tier: true } },
-      },
-    });
-
-    for (const reservation of expiredReservations) {
-      try {
-        await this.releaseReservation(reservation);
-        this.logger.log(`Released expired reservation ${reservation.id}`);
-      } catch (err) {
-        this.logger.error(`Failed to release reservation ${reservation.id}: ${err.message}`);
-      }
+    const lockKey = 'cron:reservation:cleanup-expired';
+    const token = await this.acquireLeaderLock(lockKey, 55_000);
+    if (token === false) return;
+    if (token === null) {
+      this.logger.warn(
+        'Redis unavailable for reservation cleanup lock; running idempotent cleanup anyway',
+      );
     }
 
-    if (expiredReservations.length > 0) {
-      this.logger.log(`Cleaned up ${expiredReservations.length} expired reservations`);
+    try {
+      const expiredReservations = await this.prisma.reservation.findMany({
+        where: {
+          status: ReservationStatus.PENDING,
+          expiresAt: { lt: new Date() },
+        },
+        include: {
+          items: { include: { seat: true, tier: true } },
+        },
+      });
+
+      for (const reservation of expiredReservations) {
+        try {
+          await this.releaseReservation(reservation);
+          this.logger.log(`Released expired reservation ${reservation.id}`);
+        } catch (err) {
+          this.logger.error(`Failed to release reservation ${reservation.id}: ${err.message}`);
+        }
+      }
+
+      if (expiredReservations.length > 0) {
+        this.logger.log(`Cleaned up ${expiredReservations.length} expired reservations`);
+      }
+    } finally {
+      if (typeof token === 'string') {
+        await this.releaseLeaderLock(lockKey, token);
+      }
     }
   }
 

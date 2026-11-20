@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, Roles } from '../../common/decorators';
 import { FraudDetectionService } from '../services/fraud-detection.service';
 import { DemandForecastService } from '../services/demand-forecast.service';
 import { MlClientService } from '../services/ml-client.service';
@@ -29,6 +29,7 @@ export class MlController {
 
   // ─── TRAINING (triggers FastAPI model training) ───────────────────────────
 
+  @Roles('ROLE_ADMIN')
   @UseGuards(JwtAuthGuard)
   @Post('train/all')
   async trainAllModels() {
@@ -39,6 +40,7 @@ export class MlController {
     }
   }
 
+  @Roles('ROLE_ADMIN')
   @UseGuards(JwtAuthGuard)
   @Post('train/fraud')
   async trainFraud() {
@@ -49,6 +51,7 @@ export class MlController {
     }
   }
 
+  @Roles('ROLE_ADMIN')
   @UseGuards(JwtAuthGuard)
   @Post('train/demand')
   async trainDemand() {
@@ -59,6 +62,7 @@ export class MlController {
     }
   }
 
+  @Roles('ROLE_ADMIN')
   @UseGuards(JwtAuthGuard)
   @Post('train/pricing')
   async trainPricing() {
@@ -99,6 +103,7 @@ export class MlController {
     }
   }
 
+  @Roles('ROLE_ADMIN')
   @UseGuards(JwtAuthGuard)
   @Get('fraud/user/:userId')
   async checkUserFraudRisk(@Param('userId') userId: string) {
@@ -109,6 +114,7 @@ export class MlController {
     }
   }
 
+  @Roles('ROLE_ADMIN')
   @UseGuards(JwtAuthGuard)
   @Get('fraud/report')
   async getFraudReport() {

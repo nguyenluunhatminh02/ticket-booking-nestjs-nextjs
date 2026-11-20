@@ -19,6 +19,10 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
+# The one-shot migrate service runs `prisma migrate deploy` in this image,
+# so the schema and config must exist in the runner stage.
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/generated /tmp/generated
 RUN cp -rn /tmp/generated/. ./dist/generated/ && rm -rf /tmp/generated && mkdir -p uploads
 

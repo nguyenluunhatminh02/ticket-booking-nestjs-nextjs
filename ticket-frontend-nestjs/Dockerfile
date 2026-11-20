@@ -22,6 +22,10 @@ ENV NEXT_PUBLIC_MAPBOX_TOKEN=$NEXT_PUBLIC_MAPBOX_TOKEN
 ARG NEXT_PUBLIC_OAUTH2_BASE_URL
 ENV NEXT_PUBLIC_OAUTH2_BASE_URL=$NEXT_PUBLIC_OAUTH2_BASE_URL
 
+# Internal backend origin used by next.config rewrites at build time (container DNS, not localhost)
+ARG BACKEND_INTERNAL_URL=http://backend:3001
+ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL
+
 RUN npm run build
 
 FROM node:20-alpine AS runner

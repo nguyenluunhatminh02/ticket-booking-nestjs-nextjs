@@ -6,6 +6,17 @@ import { TicketResponseDto } from '../dto/response/ticket-response.dto';
 import { User } from '../../auth/entities/user.entity';
 import { PrismaService } from '../../prisma/prisma.service';
 
+/** 128 bits of randomness: 32 hex chars, keeping the human-readable TKT- prefix. */
+function generateTicketCode(): string {
+  return `TKT-${uuidv4().replace(/-/g, '').toUpperCase()}`;
+}
+
+function isTicketCodeCollision(error: any): boolean {
+  // Prisma P2002 = unique constraint violation; only retry when the ticket code is the culprit.
+  return error?.code === 'P2002'
+    && (error?.meta?.target == null || String(error.meta.target).includes('ticket'));
+}
+
 @Injectable()
 export class TicketService {
   constructor(
@@ -18,36 +29,45 @@ export class TicketService {
     if (existing.length > 0) return existing as unknown as Ticket[];
     const tickets: Ticket[] = [];
     for (const item of (reservation.items ?? [])) {
-      const ticketCode = 'TKT-' + uuidv4().replace(/-/g, '').substring(0, 8).toUpperCase();
-      const qrData = JSON.stringify({
-        ticketCode,
-        eventId: reservation.eventId,
-        tierId: item.tierId,
-        seatId: item.seatId,
-        ts: Date.now(),
-      });
-
-      const ticket = await client.ticket.create({
-        data: {
+      let created: any;
+      // A 128-bit code makes collisions negligible; retry a few times if one still occurs.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const ticketCode = generateTicketCode();
+        const qrData = JSON.stringify({
           ticketCode,
-          reservationId: reservation.id,
-          userId: reservation.userId,
           eventId: reservation.eventId,
           tierId: item.tierId,
           seatId: item.seatId,
-          qrCodeData: qrData,
-          status: TicketStatus.VALID as any,
-          tierName: item.tier?.name,
-          seatLabel: item.seat?.rowName
-            ? `${item.seat.rowName}${item.seat.seatNumber}`
-            : item.seat
-              ? `Seat ${item.seat.seatNumber}`
-              : null,
-          price: item.priceAtBooking,
-          currency: reservation.currency || 'USD',
-        },
-      });
-      tickets.push(ticket as unknown as Ticket);
+          ts: Date.now(),
+        });
+
+        try {
+          created = await client.ticket.create({
+            data: {
+              ticketCode,
+              reservationId: reservation.id,
+              userId: reservation.userId,
+              eventId: reservation.eventId,
+              tierId: item.tierId,
+              seatId: item.seatId,
+              qrCodeData: qrData,
+              status: TicketStatus.VALID as any,
+              tierName: item.tier?.name,
+              seatLabel: item.seat?.rowName
+                ? `${item.seat.rowName}${item.seat.seatNumber}`
+                : item.seat
+                  ? `Seat ${item.seat.seatNumber}`
+                  : null,
+              price: item.priceAtBooking,
+              currency: reservation.currency || 'USD',
+            },
+          });
+          break;
+        } catch (error: any) {
+          if (!isTicketCodeCollision(error) || attempt === 2) throw error;
+        }
+      }
+      tickets.push(created as unknown as Ticket);
     }
     return tickets;
   }

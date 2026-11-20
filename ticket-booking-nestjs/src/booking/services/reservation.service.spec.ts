@@ -1,6 +1,12 @@
 import { Test } from '@nestjs/testing';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ReservationStatus, EventStatus, SeatStatus } from '../entities/enums';
+
+jest.mock('ioredis', () => {
+  const redis = { set: jest.fn(), eval: jest.fn(), disconnect: jest.fn() };
+  return { __esModule: true, default: jest.fn().mockImplementation(() => redis) };
+});
 
 const mockTx = {
   $queryRaw: jest.fn(),
@@ -46,6 +52,7 @@ describe('ReservationService', () => {
         ReservationService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: SeatLockService, useValue: seatLockService },
+        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(undefined) } },
       ],
     }).compile();
 
