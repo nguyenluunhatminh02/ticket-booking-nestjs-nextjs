@@ -13,7 +13,7 @@ import { PaymentResponseDto } from '../dto/response/payment-response.dto';
 import { ReservationService } from './reservation.service';
 import { TicketService } from './ticket.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ResaleService } from './resale.service';
+import { ResaleService, ResaleRefundRequiredException } from './resale.service';
 
 @Injectable()
 export class PaymentService {
@@ -278,42 +278,141 @@ export class PaymentService {
     if (event.type !== 'payment_intent.succeeded') return;
 
     const pi = event.data.object;
-    await this.prisma.$transaction(async (tx) => {
-      const [payment] = await tx.$queryRaw<any[]>`
-        SELECT * FROM payments WHERE provider_payment_id = ${pi.id} AND status = 'PENDING' FOR UPDATE
-      `;
-      if (!payment) return;
+    let refundRequired: any = null;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const [payment] = await tx.$queryRaw<any[]>`
+          SELECT * FROM payments WHERE provider_payment_id = ${pi.id} AND status = 'PENDING' FOR UPDATE
+        `;
+        if (!payment) return;
 
-      const expectedAmount = Math.round(Number(payment.amount) * 100);
-      if (
-        pi.amount_received !== expectedAmount ||
-        pi.currency !== String(payment.currency || 'USD').toLowerCase()
-      ) {
+        const expectedAmount = Math.round(Number(payment.amount) * 100);
+        if (
+          pi.amount_received !== expectedAmount ||
+          pi.currency !== String(payment.currency || 'USD').toLowerCase()
+        ) {
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: { status: PaymentStatus.FAILED, failureReason: 'Webhook amount mismatch' },
+          });
+          this.logger.error(`Webhook amount mismatch for payment ${payment.id}`);
+          return;
+        }
+
         await tx.payment.update({
           where: { id: payment.id },
-          data: { status: PaymentStatus.FAILED, failureReason: 'Webhook amount mismatch' },
+          data: { status: PaymentStatus.COMPLETED, completedAt: new Date() },
         });
-        this.logger.error(`Webhook amount mismatch for payment ${payment.id}`);
-        return;
-      }
 
+        // Fulfill the payment according to its type. completeResaleTransfer is
+        // idempotent, so concurrent webhooks / API confirms for the same listing
+        // cannot produce duplicate tickets.
+        if (payment.resale_listing_id) {
+          await this.resaleService.completeResaleTransfer(payment, tx);
+        } else if (payment.reservation_id) {
+          await this.reservationService.confirmReservation(payment.reservation_id, tx);
+          const reservation = await this.reservationService.getReservationEntity(
+            payment.reservation_id,
+            tx,
+          );
+          await this.ticketService.issueTicketsForReservation(reservation, tx);
+        }
+      }, { isolationLevel: 'Serializable' });
+    } catch (err: any) {
+      if (err instanceof ResaleRefundRequiredException) {
+        // The transaction has rolled back; only NOW is it safe to call Stripe.
+        // The payment id is used as an idempotency key to survive webhook retries.
+        refundRequired = err.paymentForRefund;
+      } else {
+        throw err;
+      }
+    }
+
+    if (refundRequired) {
+      await this.resaleService.refundPaymentViaStripe(refundRequired);
+      throw new BadRequestException('Resale transfer failed; payment refunded');
+    }
+  }
+
+  /**
+   * Verifies a PayPal webhook through PayPal's verification API and marks
+   * the corresponding PENDING payment as COMPLETED. This endpoint did not
+   * exist before; the frontend proxy used to receive a 404 from the backend.
+   */
+  async handlePaypalWebhook(payload: string, headers: Record<string, string>): Promise<void> {
+    const clientId = this.configService.get<string>('PAYPAL_CLIENT_ID');
+    const clientSecret = this.configService.get<string>('PAYPAL_CLIENT_SECRET');
+    if (!clientId || !clientSecret) {
+      throw new BadRequestException('PayPal webhook is not configured');
+    }
+
+    const apiBase = this.configService.get<string>('PAYPAL_API_URL') ||
+      'https://api-m.sandbox.paypal.com';
+
+    // 1. Obtain an access token for the verification API.
+    const authRes = await fetch(`${apiBase}/v1/oauth2/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
+      },
+      body: 'grant_type=client_credentials',
+    });
+    if (!authRes.ok) {
+      this.logger.error(`PayPal token request failed: ${authRes.status}`);
+      throw new BadRequestException('PayPal webhook verification failed');
+    }
+    const auth = await authRes.json() as { access_token?: string };
+    if (!auth.access_token) throw new BadRequestException('PayPal webhook verification failed');
+
+    // 2. Ask PayPal to verify the transmitted signature.
+    const verifyRes = await fetch(`${apiBase}/v1/notifications/verify-webhook-signature`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${auth.access_token}`,
+      },
+      body: JSON.stringify({
+        auth_algo: headers['paypal-auth-algo'],
+        cert_url: headers['paypal-cert-url'],
+        transmission_id: headers['paypal-transmission-id'],
+        transmission_sig: headers['paypal-transmission-sig'],
+        transmission_time: headers['paypal-transmission-time'],
+        webhook_id: this.configService.get<string>('PAYPAL_WEBHOOK_ID'),
+        webhook_event: JSON.parse(payload),
+      }),
+    });
+    if (!verifyRes.ok) {
+      this.logger.error(`PayPal verification failed: ${verifyRes.status}`);
+      throw new BadRequestException('PayPal webhook verification failed');
+    }
+    const verify = await verifyRes.json() as { verification_status?: string };
+    if (verify.verification_status !== 'SUCCESS') {
+      this.logger.warn(`PayPal verification status: ${verify.verification_status}`);
+      throw new BadRequestException('Invalid PayPal webhook signature');
+    }
+
+    // 3. Process only successful capture events.
+    const event = JSON.parse(payload);
+    if (event.event_type !== 'PAYMENT.CAPTURE.COMPLETED') return;
+    const captureId = event.resource?.id || event.resource?.supplementary_data?.related_ids?.order_id;
+    if (!captureId) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findFirst({
+        where: { provider: PaymentProvider.PAYPAL, providerPaymentId: captureId, status: PaymentStatus.PENDING },
+      });
+      if (!payment) return;
       await tx.payment.update({
         where: { id: payment.id },
         data: { status: PaymentStatus.COMPLETED, completedAt: new Date() },
       });
-
-      // Fulfill the payment according to its type. completeResaleTransfer is
-      // idempotent, so concurrent webhooks / API confirms for the same listing
-      // cannot produce duplicate tickets.
-      if (payment.resale_listing_id) {
-        await this.resaleService.completeResaleTransfer(payment, tx);
-      } else if (payment.reservation_id) {
-        await this.reservationService.confirmReservation(payment.reservation_id, tx);
-        const reservation = await this.reservationService.getReservationEntity(
-          payment.reservation_id,
-          tx,
-        );
+      if (payment.reservationId) {
+        await this.reservationService.confirmReservation(payment.reservationId, tx);
+        const reservation = await this.reservationService.getReservationEntity(payment.reservationId, tx);
         await this.ticketService.issueTicketsForReservation(reservation, tx);
+      } else if ((payment as any).resale_listing_id) {
+        await this.resaleService.completeResaleTransfer(payment, tx);
       }
     }, { isolationLevel: 'Serializable' });
   }

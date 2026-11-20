@@ -4,7 +4,7 @@ const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://localhost:3001";
 
 /**
  * PayPal Webhook proxy — forwards the raw body + PayPal verification headers
- * to the Spring Boot backend for signature verification and event processing.
+ * to the NestJS backend for signature verification and event processing.
  *
  * PayPal sends these headers for verification:
  *  - paypal-transmission-id
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     const backendRes = await fetch(
-      `${BACKEND_URL}/api/v1/payments/webhook/paypal`,
+      `${BACKEND_URL}/payments/webhook/paypal`,
       {
         method: "POST",
         headers: forwardHeaders,

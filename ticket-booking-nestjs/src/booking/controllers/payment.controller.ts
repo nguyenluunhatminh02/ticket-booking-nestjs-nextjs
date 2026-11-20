@@ -6,8 +6,10 @@ import {
   Body,
   Headers,
   RawBody,
+  Req,
 } from '@nestjs/common';
 import { Public } from '../../common/decorators';
+import { BadRequestException } from '@nestjs/common';
 import { PaymentService } from '../services/payment.service';
 import { InitiatePaymentDto, ConfirmStripePaymentDto } from '../dto';
 import { CurrentUser } from '../../common/decorators';
@@ -53,5 +55,21 @@ export class PaymentController {
   @Post('webhook/stripe')
   async stripeWebhook(@RawBody() rawBody: Buffer, @Headers('stripe-signature') sigHeader: string) {
     return this.paymentService.handleStripeWebhook(rawBody.toString(), sigHeader || '');
+  }
+
+  @Public()
+  @Post('webhook/paypal')
+  async paypalWebhook(@Req() req: any, @RawBody() rawBody: Buffer) {
+    const headers: Record<string, string> = {};
+    for (const key of [
+      'paypal-transmission-id',
+      'paypal-transmission-time',
+      'paypal-transmission-sig',
+      'paypal-cert-url',
+      'paypal-auth-algo',
+    ]) {
+      headers[key] = String(req.headers?.[key] || '');
+    }
+    return this.paymentService.handlePaypalWebhook(rawBody.toString(), headers);
   }
 }

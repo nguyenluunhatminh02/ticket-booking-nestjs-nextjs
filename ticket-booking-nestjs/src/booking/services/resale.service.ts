@@ -19,6 +19,18 @@ import { PaymentResponseDto } from '../dto/response/payment-response.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 
+/**
+ * Thrown inside a database transaction when an external Stripe refund is
+ * required. The transaction must be allowed to roll back first; the caller
+ * then performs the refund outside it. The payment id is used as an
+ * idempotency key so a retried webhook cannot issue a second refund.
+ */
+export class ResaleRefundRequiredException extends ConflictException {
+  constructor(public readonly paymentForRefund: any, message: string) {
+    super(message);
+  }
+}
+
 @Injectable()
 export class ResaleService {
   private readonly logger = new Logger(ResaleService.name);
@@ -353,6 +365,123 @@ export class ResaleService {
     throw new BadRequestException(
       'Direct purchase is not allowed. Use initiateResalePayment() then confirmResalePayment() instead.',
     );
+  }
+
+  /**
+   * Shared resale ticket-transfer logic. Runs inside the caller's
+   * SERIALIZABLE transaction, locks the listing, cancels the original
+   * ticket, issues a new one to the buyer, and marks the listing SOLD.
+   *
+   * Idempotent: if the listing is already SOLD, returns the existing state
+   * (so concurrent webhook + API confirm cannot produce duplicate tickets).
+   *
+   * If the listing expired or the original ticket is no longer valid, we
+   * throw ResaleRefundRequiredException so the transaction rolls back and
+   * the caller issues the refund outside it (with an idempotency key).
+   */
+  async completeResaleTransfer(payment: any, tx: any): Promise<ResaleListingResponseDto> {
+    if (!payment?.resale_listing_id) {
+      throw new BadRequestException('Payment is not a resale payment');
+    }
+    const listingId = payment.resale_listing_id;
+    const buyerId = payment.userId ?? payment.user_id;
+
+    const [listing] = await tx.$queryRaw<any[]>`
+      SELECT * FROM resale_listings WHERE id = ${listingId}::uuid FOR UPDATE
+    `;
+    if (!listing) throw new NotFoundException('Listing not found');
+
+    if (listing.status === ResaleStatus.SOLD) {
+      const existing = await tx.resaleListing.findUnique({
+        where: { id: listingId },
+        include: {
+          originalTicket: { include: { event: { include: { venue: true } }, tier: true } },
+          newTicket: true,
+        },
+      });
+      const resp = this.toResponse(existing, existing.originalTicket);
+      resp.newTicketCode = existing.newTicket?.ticketCode ?? null;
+      return resp;
+    }
+
+    const lockExpired = listing.lock_expires_at && new Date(listing.lock_expires_at) < new Date();
+    if (listing.status !== ResaleStatus.LOCKED || lockExpired) {
+      throw new ResaleRefundRequiredException(
+        payment,
+        'Listing expired before transfer could complete; refunded',
+      );
+    }
+    if (listing.buyer_id !== buyerId) {
+      throw new BadRequestException('Payment does not belong to the locked buyer');
+    }
+
+    const oldTicket = await tx.ticket.findUnique({
+      where: { id: listing.ticket_id },
+      include: { event: { include: { venue: true } }, tier: true },
+    });
+    if (!oldTicket || oldTicket.status !== TicketStatus.VALID) {
+      throw new ResaleRefundRequiredException(
+        payment,
+        'Original ticket is no longer valid; refunded',
+      );
+    }
+
+    await tx.ticket.update({
+      where: { id: oldTicket.id },
+      data: { status: TicketStatus.CANCELLED, cancelledAt: new Date() },
+    });
+
+    const newTicketCode = 'TKT-' + uuidv4().replace(/-/g, '').substring(0, 8).toUpperCase();
+    const savedTicket = await tx.ticket.create({
+      data: {
+        ticketCode: newTicketCode,
+        reservationId: oldTicket.reservationId,
+        userId: buyerId,
+        eventId: oldTicket.eventId,
+        tierId: oldTicket.tierId,
+        seatId: oldTicket.seatId,
+        qrCodeData: JSON.stringify({ ticketCode: newTicketCode, eventId: oldTicket.eventId }),
+        status: TicketStatus.VALID,
+        tierName: oldTicket.tierName,
+        seatLabel: oldTicket.seatLabel,
+        price: Number(listing.asking_price),
+        currency: listing.currency,
+      },
+    });
+
+    const saved = await tx.resaleListing.update({
+      where: { id: listingId },
+      data: {
+        status: ResaleStatus.SOLD,
+        soldAt: new Date(),
+        newTicketId: savedTicket.id,
+      },
+      include: {
+        originalTicket: { include: { event: { include: { venue: true } }, tier: true } },
+      },
+    });
+
+    const resp = this.toResponse(saved, saved.originalTicket);
+    resp.newTicketCode = newTicketCode;
+    return resp;
+  }
+
+  /**
+   * Best-effort Stripe refund. Failures are logged; the caller decides
+   * whether to roll back the payment state.
+   */
+  async refundPaymentViaStripe(payment: any): Promise<void> {
+    if (!this.stripeClient || !payment?.provider_payment_id) return;
+    try {
+      // Idempotency key prevents a second refund if the webhook is retried.
+      await this.stripeClient.refunds.create(
+        { payment_intent: payment.provider_payment_id },
+        { idempotencyKey: `resale-refund-${payment.id}` },
+      );
+      this.logger.warn(`Auto-refunded resale payment ${payment.id}`);
+    } catch (err: any) {
+      this.logger.error(`Failed to auto-refund payment ${payment.id}: ${err.message}`);
+    }
   }
 
   async getListingDetails(listingId: string): Promise<ResaleListingResponseDto> {

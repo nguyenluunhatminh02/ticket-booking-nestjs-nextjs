@@ -32,15 +32,8 @@ export class DeviceController {
     return ApiResponseDto.success(devices);
   }
 
-  @Delete(':deviceId')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Remove device and invalidate session' })
-  async removeDevice(@CurrentUser() user: any, @Param('deviceId') deviceId: string) {
-    await this.deviceService.deactivateDevice(user.id, deviceId);
-    await this.tokenService.revokeDeviceSession(user.id, deviceId);
-    return ApiResponseDto.success(null, 'Device removed');
-  }
-
+  // Literal routes MUST be declared before parameterized ones, otherwise
+  // Express matches 'others' as :deviceId.
   @Delete('others')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Remove all other devices' })
@@ -49,6 +42,15 @@ export class DeviceController {
     await this.deviceService.deactivateOtherDevices(user.id, currentDeviceId);
     await this.tokenService.revokeOtherSessions(user.id, currentDeviceId);
     return ApiResponseDto.success(null, 'Other devices removed');
+  }
+
+  @Delete(':deviceId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Remove device and invalidate session' })
+  async removeDevice(@CurrentUser() user: any, @Param('deviceId') deviceId: string) {
+    await this.deviceService.deactivateDevice(user.id, deviceId);
+    await this.tokenService.revokeDeviceSession(user.id, deviceId);
+    return ApiResponseDto.success(null, 'Device removed');
   }
 
   @Post(':deviceId/trust')

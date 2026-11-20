@@ -203,25 +203,17 @@ describe('PaymentService', () => {
       };
       mockTx.$queryRaw.mockResolvedValueOnce([fakePayment]);
       mockTx.payment.update.mockResolvedValue({});
-      (service as any).resaleService.completeResaleTransfer.mockResolvedValue({});
 
       await service.handleStripeWebhook('{}', 'sig');
 
       expect(mockTx.payment.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: PaymentStatus.COMPLETED }) }),
       );
-      expect((service as any).resaleService.completeResaleTransfer).toHaveBeenCalledWith(
-        fakePayment,
-        mockTx,
-      );
+      expect(resaleService.completeResaleTransfer).toHaveBeenCalledWith(fakePayment, mockTx);
       expect(reservationService.confirmReservation).not.toHaveBeenCalled();
     });
 
-    it('duplicate resale webhook: does not transfer twice (FOR UPDATE misses already-completed payment)', async () => {
-      // Re-create resaleService fresh so we have a pristine mock with no history
-      const freshResaleService = { completeResaleTransfer: jest.fn() };
-      (service as any).resaleService = freshResaleService;
-
+    it('duplicate resale webhook: FOR UPDATE miss -> no transfer', async () => {
       (service as any).stripeClient = {
         webhooks: {
           constructEvent: jest.fn().mockReturnValue({
@@ -235,7 +227,8 @@ describe('PaymentService', () => {
       await service.handleStripeWebhook('{}', 'sig');
 
       expect(mockTx.payment.update).not.toHaveBeenCalled();
-      expect(freshResaleService.completeResaleTransfer).not.toHaveBeenCalled();
+      expect(resaleService.completeResaleTransfer).not.toHaveBeenCalled();
+      expect(reservationService.confirmReservation).not.toHaveBeenCalled();
     });
 
     it('regular reservation webhook: confirms reservation and issues tickets', async () => {
@@ -266,7 +259,7 @@ describe('PaymentService', () => {
 
       expect(reservationService.confirmReservation).toHaveBeenCalledWith('res-1', mockTx);
       expect(ticketService.issueTicketsForReservation).toHaveBeenCalledWith(fakeReservation, mockTx);
-      expect((service as any).resaleService.completeResaleTransfer).not.toHaveBeenCalled();
+      expect(resaleService.completeResaleTransfer).not.toHaveBeenCalled();
     });
   });
 });
