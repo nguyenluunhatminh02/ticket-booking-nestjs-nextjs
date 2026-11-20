@@ -1,5 +1,6 @@
 export class ResaleListingResponseDto {
   id: string;
+  ticketId: string;
   eventId: string;
   eventName: string | null;
   eventCoverImageUrl: string | null;

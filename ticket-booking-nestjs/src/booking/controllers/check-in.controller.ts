@@ -22,7 +22,7 @@ export class CheckInController {
   @Roles('ROLE_ADMIN', 'ROLE_ORGANIZER')
   @Post()
   async checkIn(
-    @Body('ticketCode') ticketCode: string,
+    @Body() dto: { ticketCode: string },
     @CurrentUser() user: User,
   ) {
     // Verify organizer owns the event for this ticket
@@ -31,7 +31,7 @@ export class CheckInController {
 
     if (!isAdmin) {
       const ticket = await this.prisma.ticket.findUnique({
-        where: { ticketCode },
+        where: { ticketCode: dto.ticketCode },
         include: { event: true },
       });
       if (!ticket || ticket.event.createdById !== user.id) {
@@ -39,13 +39,15 @@ export class CheckInController {
       }
     }
 
-    return this.checkInService.checkIn(ticketCode, user.id);
+    return this.checkInService.checkIn(dto.ticketCode, user.id);
   }
 
   @Roles('ROLE_ADMIN', 'ROLE_ORGANIZER')
-  @Get('stats/:eventId')
-  async getStats(
+  @Get('event/:eventId')
+  async getCheckInsByEvent(
     @Param('eventId') eventId: string,
+    @Query('page', new DefaultValuePipe(0), ParseIntPipe) page: number,
+    @Query('size', new DefaultValuePipe(50), ParseIntPipe) size: number,
     @CurrentUser() user: User,
   ) {
     const roles: string[] = (user as any).roles || [];
@@ -58,26 +60,6 @@ export class CheckInController {
       }
     }
 
-    return this.checkInService.getCheckInStats(eventId);
-  }
-
-  @Roles('ROLE_ADMIN', 'ROLE_ORGANIZER')
-  @Get('recent/:eventId')
-  async getRecent(
-    @Param('eventId') eventId: string,
-    @Query('limit') limit: string,
-    @CurrentUser() user: User,
-  ) {
-    const roles: string[] = (user as any).roles || [];
-    const isAdmin = roles.includes('ROLE_ADMIN');
-
-    if (!isAdmin) {
-      const event = await this.prisma.event.findUnique({ where: { id: eventId } });
-      if (!event || event.createdById !== user.id) {
-        throw new ForbiddenException('You do not have access to this event');
-      }
-    }
-
-    return this.checkInService.getRecentCheckIns(eventId, parseInt(limit) || 50);
+    return this.checkInService.getCheckInsByEvent(eventId, page, size);
   }
 }

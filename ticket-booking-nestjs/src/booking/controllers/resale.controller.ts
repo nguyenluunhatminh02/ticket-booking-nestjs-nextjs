@@ -10,7 +10,7 @@ import {
 import { Public, CurrentUser } from '../../common/decorators';
 import { User } from '../../auth/entities/user.entity';
 import { ResaleService } from '../services/resale.service';
-import { CreateResaleListingDto } from '../dto';
+import { ResaleListingDto } from '../dto';
 import { PaymentProvider } from '../entities/enums';
 
 @Controller('resale')
@@ -23,9 +23,9 @@ export class ResaleController {
     return this.resaleService.getMarketplace(eventId);
   }
 
-  @Post('listings')
+  @Post('list')
   async createListing(
-    @Body() dto: CreateResaleListingDto,
+    @Body() dto: ResaleListingDto,
     @CurrentUser() user: User,
   ) {
     return this.resaleService.createListing(dto, user);

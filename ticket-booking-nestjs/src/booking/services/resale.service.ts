@@ -288,7 +288,6 @@ export class ResaleService {
       if (!oldTicket || oldTicket.status !== TicketStatus.VALID) {
         throw new ConflictException('Original ticket is no longer valid');
       }
-
       // Cancel old ticket
       await tx.ticket.update({
         where: { id: oldTicket.id },
@@ -322,9 +321,14 @@ export class ResaleService {
           soldAt: new Date(),
           newTicketId: savedTicket.id,
         },
+        include: {
+          originalTicket: {
+            include: { event: { include: { venue: true } }, tier: true },
+          },
+        },
       });
 
-      const resp = this.toResponse(saved, oldTicket);
+      const resp = this.toResponse(saved, saved.originalTicket);
       resp.newTicketCode = newTicketCode;
       return resp;
     }, { isolationLevel: 'Serializable' });

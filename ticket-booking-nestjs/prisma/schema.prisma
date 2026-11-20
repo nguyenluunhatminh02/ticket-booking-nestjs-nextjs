@@ -598,12 +598,13 @@ model Ticket {
 
 model Payment {
   id                   String        @id @default(uuid()) @db.Uuid
-  reservationId        String        @map("reservation_id") @db.Uuid
+  reservationId        String?       @map("reservation_id") @db.Uuid
+  resaleListingId      String?       @map("resale_listing_id") @db.Uuid
   userId               String        @map("user_id") @db.Uuid
   amount               Decimal       @db.Decimal(10, 2)
   currency             String
   provider             String
-  providerPaymentId    String?       @map("provider_payment_id")
+  providerPaymentId    String?       @unique @map("provider_payment_id")
   providerClientSecret String?       @map("provider_client_secret")
   status               PaymentStatus @default(PENDING)
   failureReason        String?       @map("failure_reason")
@@ -611,8 +612,9 @@ model Payment {
   completedAt          DateTime?     @map("completed_at") @db.Timestamptz
   updatedAt            DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 
-  reservation Reservation @relation(fields: [reservationId], references: [id])
-  user        User        @relation(fields: [userId], references: [id])
+  reservation   Reservation?   @relation(fields: [reservationId], references: [id])
+  resaleListing ResaleListing? @relation(fields: [resaleListingId], references: [id])
+  user          User           @relation(fields: [userId], references: [id])
 
   @@map("payments")
 }
@@ -705,6 +707,7 @@ model ResaleListing {
   seller         User   @relation("ResaleSeller", fields: [sellerId], references: [id])
   buyer          User?  @relation("ResaleBuyer", fields: [buyerId], references: [id])
   newTicket      Ticket? @relation("ResaleNewTicket", fields: [newTicketId], references: [id])
+  payments       Payment[]
 
   @@map("resale_listings")
 }

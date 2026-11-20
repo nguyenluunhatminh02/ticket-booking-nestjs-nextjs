@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectRedis } from '@nestjs/bull';
-import { Redis } from 'ioredis';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 
 @Injectable()
-export class SeatLockService {
+export class SeatLockService implements OnModuleInit {
   private readonly logger = new Logger(SeatLockService.name);
+  private redis: Redis;
 
   // Lua script for atomic unlock: check ownership + delete in one operation
   private readonly unlockScript = `
@@ -23,7 +24,15 @@ export class SeatLockService {
     return 1
   `;
 
-  constructor(@InjectRedis() private redis: Redis) {}
+  constructor(private configService: ConfigService) {}
+
+  onModuleInit() {
+    this.redis = new Redis({
+      host: this.configService.get('REDIS_HOST', 'localhost'),
+      port: this.configService.get<number>('REDIS_PORT', 6379),
+      password: this.configService.get('REDIS_PASSWORD') || undefined,
+    });
+  }
 
   async lockSeat(eventId: string, seatId: string, userId: string): Promise<boolean> {
     const lockKey = `seat-lock:${eventId}:${seatId}`;
@@ -82,7 +91,9 @@ export class SeatLockService {
         const values = await this.redis.mget(...keys);
         keys.forEach((key, index) => {
           const seatId = key.split(':')[2];
-          lockedSeats[seatId] = values[index];
+          if (values[index]) {
+            lockedSeats[seatId] = values[index] as string;
+          }
         });
       }
     } while (cursor !== '0');
