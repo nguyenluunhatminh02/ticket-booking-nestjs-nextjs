@@ -194,13 +194,12 @@ export class PaymentService {
 
   async refundPayment(reservationId: string, userId: string): Promise<PaymentResponseDto> {
     // Check if any tickets from this reservation have been resold
-    const reservation = await this.prisma.reservation.findUnique({
-      where: { id: reservationId },
-      include: { items: true },
+    const tickets = await this.prisma.ticket.findMany({
+      where: { reservationId },
+      select: { id: true },
     });
-    if (!reservation) throw new NotFoundException('Reservation not found');
 
-    const ticketIds = reservation.items.map((i: any) => i.ticketId).filter(Boolean);
+    const ticketIds = tickets.map((t: any) => t.id);
     if (ticketIds.length > 0) {
       const resoldTickets = await this.prisma.resaleListing.findFirst({
         where: {
@@ -298,12 +297,19 @@ export class PaymentService {
         data: { status: PaymentStatus.COMPLETED, completedAt: new Date() },
       });
 
-      await this.reservationService.confirmReservation(payment.reservation_id, tx);
-      const reservation = await this.reservationService.getReservationEntity(
-        payment.reservation_id,
-        tx,
-      );
-      await this.ticketService.issueTicketsForReservation(reservation, tx);
+      // Handle based on payment type
+      if (payment.resale_listing_id) {
+        // Resale payment - handled by ResaleService webhook
+        this.logger.log(`Resale payment completed via webhook: ${payment.resale_listing_id}`);
+      } else if (payment.reservation_id) {
+        // Regular reservation payment
+        await this.reservationService.confirmReservation(payment.reservation_id, tx);
+        const reservation = await this.reservationService.getReservationEntity(
+          payment.reservation_id,
+          tx,
+        );
+        await this.ticketService.issueTicketsForReservation(reservation, tx);
+      }
     }, { isolationLevel: 'Serializable' });
   }
 

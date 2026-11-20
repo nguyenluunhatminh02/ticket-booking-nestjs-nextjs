@@ -23,6 +23,11 @@ export class ResaleController {
     return this.resaleService.getMarketplace(eventId);
   }
 
+  @Get('event/:eventId')
+  async getMarketplaceByEvent(@Param('eventId') eventId: string) {
+    return this.resaleService.getMarketplace(eventId);
+  }
+
   @Post('list')
   async createListing(
     @Body() dto: ResaleListingDto,
@@ -60,6 +65,17 @@ export class ResaleController {
     @CurrentUser() user: User,
   ) {
     return this.resaleService.confirmResalePayment(paymentIntentId, listingId, user.id);
+  }
+
+  @Post(':listingId/purchase')
+  async purchaseListing(
+    @Param('listingId') listingId: string,
+    @CurrentUser() user: User,
+  ) {
+    // Legacy endpoint - redirect to payment flow
+    throw new BadRequestException(
+      'Direct purchase is not allowed. Use POST /resale/:listingId/payment then POST /resale/:listingId/confirm-payment',
+    );
   }
 
   @Delete(':listingId')

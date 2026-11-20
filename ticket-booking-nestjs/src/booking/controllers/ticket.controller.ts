@@ -68,4 +68,28 @@ export class TicketController {
     // Regular user can only view their own tickets
     return this.ticketService.getTicketByCode(ticketCode, user.id);
   }
+
+  @Post(':ticketCode/cancel')
+  async cancelTicket(
+    @Param('ticketCode') ticketCode: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.ticketService.cancelTicket(ticketCode, user.id);
+  }
+
+  @Get(':ticketCode/qr')
+  async getQrCode(
+    @Param('ticketCode') ticketCode: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.ticketService.getQrCode(ticketCode, user.id);
+  }
+
+  @Get(':ticketCode/dynamic-qr')
+  async getDynamicQr(
+    @Param('ticketCode') ticketCode: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.ticketService.getDynamicQr(ticketCode, user.id);
+  }
 }
