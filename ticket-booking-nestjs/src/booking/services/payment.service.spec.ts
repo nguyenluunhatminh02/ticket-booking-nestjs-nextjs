@@ -179,5 +179,88 @@ describe('PaymentService', () => {
       await expect(service.handleStripeWebhook('{}', 'sig')).resolves.toBeUndefined();
       expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
+
+    it('resale webhook: marks COMPLETED and calls resale transfer', async () => {
+      const fakePayment = {
+        id: 'p1',
+        amount: 50,
+        currency: 'USD',
+        status: 'PENDING',
+        resale_listing_id: 'rl-1',
+        reservation_id: null,
+        userId: 'buyer-1',
+      };
+      (service as any).stripeClient = {
+        webhooks: {
+          constructEvent: jest.fn().mockReturnValue({
+            type: 'payment_intent.succeeded',
+            data: { object: { id: 'pi-1', amount_received: 5000, currency: 'usd' } },
+          }),
+        },
+      };
+      mockTx.$queryRaw.mockResolvedValueOnce([fakePayment]);
+      mockTx.payment.update.mockResolvedValue({});
+      (service as any).resaleService.completeResaleTransfer.mockResolvedValue({});
+
+      await service.handleStripeWebhook('{}', 'sig');
+
+      expect(mockTx.payment.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: PaymentStatus.COMPLETED }) }),
+      );
+      expect((service as any).resaleService.completeResaleTransfer).toHaveBeenCalledWith(
+        fakePayment,
+        mockTx,
+      );
+      expect(reservationService.confirmReservation).not.toHaveBeenCalled();
+    });
+
+    it('duplicate resale webhook: does not transfer twice (FOR UPDATE misses already-completed payment)', async () => {
+      // Second webhook arrives: FOR UPDATE query returns empty because payment is already COMPLETED
+      (service as any).stripeClient = {
+        webhooks: {
+          constructEvent: jest.fn().mockReturnValue({
+            type: 'payment_intent.succeeded',
+            data: { object: { id: 'pi-1', amount_received: 5000, currency: 'usd' } },
+          }),
+        },
+      };
+      mockTx.$queryRaw.mockResolvedValueOnce([]);
+
+      await service.handleStripeWebhook('{}', 'sig');
+
+      expect(mockTx.payment.update).not.toHaveBeenCalled();
+      expect((service as any).resaleService.completeResaleTransfer).not.toHaveBeenCalled();
+    });
+
+    it('regular reservation webhook: confirms reservation and issues tickets', async () => {
+      const fakePayment = {
+        id: 'p2',
+        amount: 100,
+        currency: 'USD',
+        status: 'PENDING',
+        reservation_id: 'res-1',
+        resale_listing_id: null,
+      };
+      (service as any).stripeClient = {
+        webhooks: {
+          constructEvent: jest.fn().mockReturnValue({
+            type: 'payment_intent.succeeded',
+            data: { object: { id: 'pi-2', amount_received: 10000, currency: 'usd' } },
+          }),
+        },
+      };
+      mockTx.$queryRaw.mockResolvedValueOnce([fakePayment]);
+      mockTx.payment.update.mockResolvedValue({});
+      const fakeReservation = { id: 'res-1' };
+      reservationService.confirmReservation.mockResolvedValue(undefined);
+      reservationService.getReservationEntity.mockResolvedValue(fakeReservation);
+      ticketService.issueTicketsForReservation.mockResolvedValue([]);
+
+      await service.handleStripeWebhook('{}', 'sig');
+
+      expect(reservationService.confirmReservation).toHaveBeenCalledWith('res-1', mockTx);
+      expect(ticketService.issueTicketsForReservation).toHaveBeenCalledWith(fakeReservation, mockTx);
+      expect((service as any).resaleService.completeResaleTransfer).not.toHaveBeenCalled();
+    });
   });
 });

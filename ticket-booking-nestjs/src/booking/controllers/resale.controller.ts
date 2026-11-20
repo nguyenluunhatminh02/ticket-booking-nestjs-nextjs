@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { Public, CurrentUser } from '../../common/decorators';
 import { User } from '../../auth/entities/user.entity';
