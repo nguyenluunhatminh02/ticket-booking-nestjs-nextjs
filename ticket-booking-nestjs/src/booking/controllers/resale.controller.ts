@@ -73,10 +73,10 @@ export class ResaleController {
     @Param('listingId') listingId: string,
     @CurrentUser() user: User,
   ) {
-    // Legacy endpoint - redirect to payment flow
-    throw new BadRequestException(
-      'Direct purchase is not allowed. Use POST /resale/:listingId/payment then POST /resale/:listingId/confirm-payment',
-    );
+    // Demo-flow endpoint: creates a COMPLETED payment record and transfers the ticket
+    // in one step, so the frontend can complete purchase without a real Stripe checkout.
+    // For production with real Stripe, use the /payment + /confirm-payment flow.
+    return this.resaleService.demoDirectPurchase(listingId, user);
   }
 
   @Delete(':listingId')

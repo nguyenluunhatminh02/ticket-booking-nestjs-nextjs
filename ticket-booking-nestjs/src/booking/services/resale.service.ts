@@ -355,7 +355,55 @@ export class ResaleService {
     );
   }
 
-  async getUserListings(userId: string): Promise<ResaleListingResponseDto[]> {
+    /**
+     * Demo-flow: atomic lock + create COMPLETED payment + transfer ticket in one
+     * SERIALIZABLE transaction. Used by the frontend's legacy "Purchase" button
+     * when Stripe is not wired end-to-end. In production, callers should instead
+     * lock -> initiateResalePayment -> (Stripe) -> confirmResalePayment/webhook.
+     */
+    async demoDirectPurchase(listingId: string, buyer: any): Promise<ResaleListingResponseDto> {
+      return this.prisma.$transaction(async (tx) => {
+        const [listing] = await tx.$queryRaw<any[]>`
+          SELECT * FROM resale_listings WHERE id = ${listingId}::uuid FOR UPDATE
+        `;
+        if (!listing) throw new NotFoundException('Listing not found');
+        if (listing.status !== ResaleStatus.LISTED) {
+          throw new BadRequestException('Listing is not available');
+        }
+        if (listing.seller_id === buyer.id) {
+          throw new BadRequestException('Cannot purchase your own listing');
+        }
+
+        // Lock it to this buyer
+        await tx.resaleListing.update({
+          where: { id: listingId },
+          data: {
+            status: ResaleStatus.LOCKED,
+            buyerId: buyer.id,
+            lockExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+          },
+        });
+
+        // Create a COMPLETED payment record (simulates Stripe success)
+        const payment = await tx.payment.create({
+          data: {
+            resaleListingId: listingId,
+            userId: buyer.id,
+            amount: Number(listing.asking_price),
+            currency: listing.currency || 'USD',
+            provider: PaymentProvider.STRIPE,
+            status: PaymentStatus.COMPLETED,
+            providerPaymentId: `demo_${listingId}_${Date.now()}`,
+            completedAt: new Date(),
+          },
+        });
+
+        // Transfer ticket using the shared function
+        return this.completeResaleTransfer(payment, tx);
+      }, { isolationLevel: 'Serializable' });
+    }
+
+    async getUserListings(userId: string): Promise<ResaleListingResponseDto[]> {
     const listings = await this.prisma.resaleListing.findMany({
       where: { sellerId: userId },
       include: {
