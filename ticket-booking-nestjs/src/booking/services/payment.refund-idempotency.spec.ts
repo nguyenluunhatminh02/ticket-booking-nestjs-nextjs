@@ -41,18 +41,32 @@ describe('PaymentService.refundPayment - idempotency', () => {
     stripeRefundCreate = jest.fn().mockResolvedValue({ id: 're_1' });
     mockTx = {
       $executeRaw: jest.fn().mockResolvedValue(1),
+      resaleListing: { findFirst: jest.fn().mockResolvedValue(null) },
       payment: {
         findUnique: jest.fn().mockResolvedValue({ ...payment, status: PaymentStatus.REFUNDED }),
         findUniqueOrThrow: jest.fn().mockImplementation(async () => ({
           ...payment,
           status: PaymentStatus.REFUNDED,
         })),
+        // The in-transaction resale guard uses resaleListing as its filter;
+        // other payment lookups are keyed on reservationId.
+        findFirst: jest.fn().mockImplementation((args: any) =>
+          Promise.resolve(args?.where?.reservationId ? payment : null),
+        ),
       },
     };
     mockPrisma = {
       ticket: { findMany: jest.fn().mockResolvedValue([]) },
       resaleListing: { findFirst: jest.fn().mockResolvedValue(null) },
-      payment: { findFirst: jest.fn().mockResolvedValue(payment), findUnique: jest.fn() },
+      payment: {
+        // Reservation-payment lookups include reservationId; the resale-guard
+        // lookup filters on resaleListing instead, so key the mock on the query
+        // rather than on call order.
+        findFirst: jest.fn().mockImplementation((args: any) =>
+          Promise.resolve(args?.where?.reservationId ? payment : null),
+        ),
+        findUnique: jest.fn(),
+      },
       $transaction: jest.fn((fn: any) => fn(mockTx)),
       $executeRaw: jest.fn().mockResolvedValue(1),
     };
@@ -125,10 +139,9 @@ describe('PaymentService.refundPayment - idempotency', () => {
   });
 
   it('a caller that lost the race to an already-finished refund returns it idempotently', async () => {
-    mockPrisma.payment.findFirst.mockResolvedValue({
-      ...payment,
-      status: PaymentStatus.REFUNDED,
-    });
+    mockPrisma.payment.findFirst.mockImplementation((args: any) =>
+      Promise.resolve(args?.where?.reservationId ? { ...payment, status: PaymentStatus.REFUNDED } : null),
+    );
 
     const result = await refund();
     expect(result.status).toBe(PaymentStatus.REFUNDED);
@@ -173,11 +186,87 @@ describe('PaymentService.refundPayment - idempotency', () => {
 
   it('cannot refund a reservation whose tickets were resold', async () => {
     mockPrisma.ticket.findMany.mockResolvedValue([{ id: 'tk-1' }]);
-    mockPrisma.resaleListing.findFirst.mockResolvedValue({ id: 'listing-1' });
+    // The initial guard does not see the listing, but the re-check after the
+    // claim row lock does; only that qualified check can stop the refund here.
+    mockPrisma.resaleListing.findFirst.mockResolvedValue(null);
+    mockTx.resaleListing.findFirst.mockResolvedValue({ id: 'listing-1' });
 
-    await expect(refund()).rejects.toThrow(/have been resold/);
-    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    await expect(refund()).rejects.toThrow(
+      'Cannot refund: one or more tickets have an active resale listing or pending resale payment',
+    );
+    expect(mockTx.resaleListing.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          ticketId: { in: ['tk-1'] },
+          status: { in: expect.arrayContaining(['LISTED', 'LOCKED', 'SOLD']) },
+        }),
+      }),
+    );
     expect(stripeRefundCreate).not.toHaveBeenCalled();
+    expect(reservationService.releaseReservation).not.toHaveBeenCalled();
+  });
+
+  it('cannot refund when a ticket has a LISTED or LOCKED resale listing', async () => {
+    mockPrisma.ticket.findMany.mockResolvedValue([{ id: 'tk-1' }, { id: 'tk-2' }]);
+    mockPrisma.resaleListing.findFirst.mockResolvedValue(null);
+    mockTx.resaleListing.findFirst.mockResolvedValue({ id: 'listing-1' });
+
+    await expect(refund()).rejects.toThrow(
+      'Cannot refund: one or more tickets have an active resale listing or pending resale payment',
+    );
+    expect(mockTx.resaleListing.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          ticketId: { in: ['tk-1', 'tk-2'] },
+          status: { in: expect.arrayContaining(['LISTED', 'LOCKED', 'SOLD']) },
+        }),
+      }),
+    );
+    expect(stripeRefundCreate).not.toHaveBeenCalled();
+  });
+
+  it('cannot refund when a resale listing has a PENDING payment', async () => {
+    mockPrisma.ticket.findMany.mockResolvedValue([{ id: 'tk-1' }]);
+    // No active listing row, but an in-flight resale payment references one of
+    // the reservation's tickets through its resaleListingId.
+    mockPrisma.resaleListing.findFirst.mockResolvedValueOnce(null);
+    mockTx.payment.findFirst.mockImplementation((args: any) =>
+      Promise.resolve(
+        args?.where?.reservationId
+          ? payment
+          : { id: 'resale-pay-1', status: PaymentStatus.PENDING },
+      ),
+    );
+
+    await expect(refund()).rejects.toThrow(
+      'Cannot refund: one or more tickets have an active resale listing or pending resale payment',
+    );
+    expect(mockTx.payment.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: PaymentStatus.PENDING,
+          resaleListing: { ticketId: { in: ['tk-1'] } },
+        }),
+      }),
+    );
+    expect(stripeRefundCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a resale listing created between the initial guard and the claim lock', async () => {
+    // The outside-transaction check sees no resale activity, but another
+    // transaction creates a listing before this caller acquires the payment
+    // row lock inside the claim transaction. The in-transaction re-check must
+    // throw before Stripe is called.
+    mockPrisma.ticket.findMany.mockResolvedValue([{ id: 'tk-1' }]);
+    mockPrisma.resaleListing.findFirst.mockResolvedValue(null);
+    mockTx.resaleListing.findFirst.mockResolvedValue({ id: 'listing-race' });
+
+    await expect(refund()).rejects.toThrow(
+      'Cannot refund: one or more tickets have an active resale listing or pending resale payment',
+    );
+    expect(mockTx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(stripeRefundCreate).not.toHaveBeenCalled();
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it('fails when no completed payment exists', async () => {

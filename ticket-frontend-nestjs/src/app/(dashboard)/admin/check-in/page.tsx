@@ -6,6 +6,7 @@ import { useCheckIn } from "@/hooks/use-dashboard";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -26,6 +27,8 @@ const QrScanner = dynamic(() => import("@/components/booking/qr-scanner"), {
 
 export default function AdminCheckInPage() {
   const [ticketCode, setTicketCode] = useState("");
+  const [qrCode, setQrCode] = useState("");
+  const [qrError, setQrError] = useState("");
   const [results, setResults] = useState<CheckInResponse[]>([]);
   const [scannerEnabled, setScannerEnabled] = useState(true);
   const checkInMutation = useCheckIn();
@@ -42,11 +45,18 @@ export default function AdminCheckInPage() {
   const handleCheckIn = useCallback(
     async (code?: string) => {
       const codeToUse = (code || ticketCode).trim();
+      const qrToUse = qrCode.trim();
       if (!codeToUse) return;
+      if (!qrToUse) {
+        setQrError("Dynamic QR code is required");
+        return;
+      }
+      setQrError("");
 
       try {
         const result = await checkInMutation.mutateAsync({
           ticketCode: codeToUse,
+          qrCode: qrToUse,
           deviceInfo: navigator.userAgent,
         });
         setResults((prev) => [result, ...prev]);
@@ -70,17 +80,17 @@ export default function AdminCheckInPage() {
         inputRef.current?.focus();
       }
     },
-    [ticketCode, checkInMutation]
+    [ticketCode, qrCode, checkInMutation, t]
   );
 
   const handleQrScan = useCallback(
     (data: string) => {
       setScannerEnabled(false);
-      handleCheckIn(data).finally(() => {
-        setTimeout(() => setScannerEnabled(true), 2000);
-      });
+      // Scanned payload is the dynamic QR code; keep the ticket code from manual entry.
+      setQrCode(data.trim());
+      setTimeout(() => setScannerEnabled(true), 2000);
     },
-    [handleCheckIn]
+    []
   );
 
   const clearResults = () => setResults([]);
@@ -188,28 +198,51 @@ export default function AdminCheckInPage() {
                 {t("checkIn.manualDesc")}
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               <div className="flex gap-2">
-                <Input
-                  ref={inputRef}
-                  placeholder={t("checkIn.ticketCodePlaceholder")}
-                  value={ticketCode}
-                  onChange={(e) => setTicketCode(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleCheckIn()}
-                  className="font-mono text-base h-11"
-                  autoFocus
-                />
-                <Button
-                  onClick={() => handleCheckIn()}
-                  disabled={checkInMutation.isPending || !ticketCode.trim()}
-                  size="lg"
-                  className="shrink-0"
-                >
-                  <ScanLine className="h-4 w-4 mr-1.5" />
-                  Check In
-                </Button>
+                <div className="flex-1 space-y-1.5">
+                  <Label htmlFor="ticket-code">{t("tickets.code")}</Label>
+                  <Input
+                    id="ticket-code"
+                    ref={inputRef}
+                    placeholder={t("checkIn.ticketCodePlaceholder")}
+                    value={ticketCode}
+                    onChange={(e) => setTicketCode(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleCheckIn()}
+                    className="font-mono text-base h-11"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <Label htmlFor="qr-code">{t("tickets.qrCode")}</Label>
+                  <Input
+                    id="qr-code"
+                    placeholder="Dynamic QR code"
+                    value={qrCode}
+                    onChange={(e) => {
+                      setQrCode(e.target.value);
+                      if (qrError) setQrError("");
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && handleCheckIn()}
+                    className="font-mono text-base h-11"
+                  />
+                </div>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
+              {qrError && (
+                <p className="text-xs text-red-600 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" /> {qrError}
+                </p>
+              )}
+              <Button
+                onClick={() => handleCheckIn()}
+                disabled={checkInMutation.isPending || !ticketCode.trim() || !qrCode.trim()}
+                size="lg"
+                className="w-full sm:w-auto"
+              >
+                <ScanLine className="h-4 w-4 mr-1.5" />
+                Check In
+              </Button>
+              <p className="text-xs text-muted-foreground">
                 {t("common.tip")}: {t("checkIn.usbTip")}
               </p>
             </CardContent>

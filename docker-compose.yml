@@ -20,6 +20,13 @@ services:
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set}"]
     ports:
       - "127.0.0.1:6379:6379"
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   ml-service:
     build: ./ml-service
@@ -56,6 +63,7 @@ services:
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      QR_SECRET: ${QR_SECRET:?QR_SECRET must be set}
       CORS_ORIGINS: http://localhost:3000
       APP_FRONTEND_URL: http://localhost:3000
       ML_SERVICE_URL: http://ml-service:8000/api/ml

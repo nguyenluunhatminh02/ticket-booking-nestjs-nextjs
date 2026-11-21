@@ -267,7 +267,11 @@ export class PaymentService {
   }
 
   async refundPayment(reservationId: string, userId: string): Promise<PaymentResponseDto> {
-    // Check if any tickets from this reservation have been resold
+    // A refund must never race a resale: the original ticket may still be
+    // listed/locked (the listing would outlive its ticket), or a buyer may
+    // already have a pending payment for one of those listings.
+    const RESALE_REFUND_ERROR =
+      'Cannot refund: one or more tickets have an active resale listing or pending resale payment';
     const tickets = await this.prisma.ticket.findMany({
       where: { reservationId },
       select: { id: true },
@@ -275,16 +279,30 @@ export class PaymentService {
 
     const ticketIds = tickets.map((t: any) => t.id);
     if (ticketIds.length > 0) {
-      const resoldTickets = await this.prisma.resaleListing.findFirst({
+      const blockingListing = await this.prisma.resaleListing.findFirst({
         where: {
           ticketId: { in: ticketIds },
-          status: ResaleStatus.SOLD,
+          status: {
+            in: [ResaleStatus.LISTED, ResaleStatus.LOCKED, ResaleStatus.SOLD],
+          },
         },
+        select: { id: true },
       });
-      if (resoldTickets) {
-        throw new BadRequestException(
-          'Cannot refund: one or more tickets from this reservation have been resold',
-        );
+      // A PENDING payment whose resaleListingId points at one of the
+      // reservation's listings means a resale is still in flight.
+      const pendingResalePayment = blockingListing
+        ? null
+        : await this.prisma.payment.findFirst({
+            where: {
+              status: PaymentStatus.PENDING,
+              resaleListing: {
+                ticketId: { in: ticketIds },
+              },
+            },
+            select: { id: true },
+          });
+      if (blockingListing || pendingResalePayment) {
+        throw new BadRequestException(RESALE_REFUND_ERROR);
       }
     }
 
@@ -336,6 +354,34 @@ export class PaymentService {
           )
       `;
       if (updatedRows > 0) {
+        // Re-check resale state inside the transaction after acquiring the row
+        // lock. This closes the TOCTOU gap: between the initial check and now,
+        // another transaction could have created a resale listing or payment.
+        if (ticketIds.length > 0) {
+          const blockingListing = await tx.resaleListing.findFirst({
+            where: {
+              ticketId: { in: ticketIds },
+              status: {
+                in: [ResaleStatus.LISTED, ResaleStatus.LOCKED, ResaleStatus.SOLD],
+              },
+            },
+            select: { id: true },
+          });
+          const pendingResalePayment = blockingListing
+            ? null
+            : await tx.payment.findFirst({
+                where: {
+                  status: PaymentStatus.PENDING,
+                  resaleListing: {
+                    ticketId: { in: ticketIds },
+                  },
+                },
+                select: { id: true },
+              });
+          if (blockingListing || pendingResalePayment) {
+            throw new BadRequestException(RESALE_REFUND_ERROR);
+          }
+        }
         claimed = true;
         return;
       }

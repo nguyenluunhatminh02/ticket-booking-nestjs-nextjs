@@ -51,6 +51,28 @@ function isUniqueViolation(error: any): boolean {
   return error?.code === 'P2002';
 }
 
+/**
+ * Stripe rejects cancellation once a PaymentIntent has been charged. Such a
+ * payment may still be fulfilled by a delayed webhook, so treating it as a
+ * failed local payment (and releasing its listing) would strand the buyer's
+ * money. Accept Stripe's error code, message and HTTP status shapes.
+ */
+function isAlreadySucceededPaymentError(error: any): boolean {
+  const code = String(error?.code ?? '').toLowerCase();
+  if (code === 'charge_already_succeeded') return true;
+  const message = String(error?.message ?? error?.rawMessage ?? '');
+  if (/already succeeded/i.test(message)) return true;
+  const status = Number(error?.statusCode ?? error?.status ?? error?.rawStatusCode);
+  return status === 400 && /already.?succeeded/i.test(`${code} ${message}`);
+}
+
+/** Stripe reports a missing PaymentIntent as a 404 with a not_found code. */
+function isPaymentIntentNotFoundError(error: any): boolean {
+  const code = String(error?.code ?? '').toLowerCase();
+  const status = Number(error?.statusCode ?? error?.status ?? error?.rawStatusCode);
+  return code === 'resource_missing' || code === 'payment_intent_not_found' || status === 404;
+}
+
 @Injectable()
 export class ResaleService implements OnModuleDestroy {
   private readonly logger = new Logger(ResaleService.name);
@@ -598,19 +620,113 @@ export class ResaleService implements OnModuleDestroy {
 
     try {
       const now = new Date();
-      const expired = await this.prisma.resaleListing.updateMany({
-        where: {
-          status: ResaleStatus.LOCKED,
-          lockExpiresAt: { lt: now },
-        },
-        data: {
-          status: ResaleStatus.LISTED,
-          buyerId: null,
-          lockExpiresAt: null,
-        },
+      const expiredWhere = {
+        status: ResaleStatus.LOCKED,
+        lockExpiresAt: { lt: now },
+      };
+      const expiredListings = await this.prisma.resaleListing.findMany({
+        where: expiredWhere,
+        select: { id: true },
       });
-      if (expired.count > 0) {
-        this.logger.log(`Expired ${expired.count} locked resale listings`);
+      const expiredIds = expiredListings.map((listing: any) => listing.id);
+
+      if (expiredIds.length > 0) {
+        // Cancel Stripe PaymentIntents BEFORE releasing the listings, outside
+        // any DB transaction: network I/O must not hold DB locks. Track each
+        // payment's outcome so a charge that already succeeded is never failed
+        // locally and its listing stays locked for the delayed webhook to
+        // fulfill; a failed DB update likewise must not unlock the listing.
+        // Listings with no pending payment are releasable by default.
+        const releasableIds = new Set<string>(expiredIds);
+        try {
+          const pendingWhere = {
+            resaleListingId: { in: expiredIds },
+            status: PaymentStatus.PENDING,
+          };
+          const pendingPayments: any[] = await this.prisma.payment.findMany({ where: pendingWhere });
+          const failedPaymentIds: string[] = [];
+
+          for (const payment of pendingPayments) {
+            const listingId = payment.resaleListingId;
+            if (!payment.providerPaymentId) {
+              // No external intent to cancel: nothing was charged, so the
+              // listing can be released and the stale local payment failed.
+              failedPaymentIds.push(payment.id);
+              continue;
+            }
+            if (!this.stripeClient) {
+              releasableIds.delete(listingId);
+              this.logger.warn(
+                `Stripe is not configured; keeping resale listing ${listingId} locked for payment ${payment.id}`,
+              );
+              continue;
+            }
+            try {
+              await this.stripeClient.paymentIntents.cancel(payment.providerPaymentId);
+              failedPaymentIds.push(payment.id);
+            } catch (err: any) {
+              if (isAlreadySucceededPaymentError(err)) {
+                // The charge went through: let the webhook complete it against
+                // the still-locked listing. Neither the local payment nor the
+                // listing may be released on this path.
+                releasableIds.delete(listingId);
+                this.logger.warn(
+                  `PaymentIntent ${payment.providerPaymentId} already succeeded; keeping resale listing ${listingId} locked for webhook fulfillment`,
+                );
+              } else if (isPaymentIntentNotFoundError(err)) {
+                // Already gone at Stripe: no live intent can charge the buyer.
+                failedPaymentIds.push(payment.id);
+              } else {
+                // An uncertain cancel result must never unlock the listing.
+                releasableIds.delete(listingId);
+                this.logger.warn(
+                  `Failed to cancel Stripe PaymentIntent ${payment.providerPaymentId}: ${err.message}`,
+                );
+              }
+            }
+          }
+
+          if (failedPaymentIds.length > 0) {
+            try {
+              await this.prisma.payment.updateMany({
+                where: { id: { in: failedPaymentIds } },
+                data: {
+                  status: PaymentStatus.FAILED,
+                  failureReason: 'Resale lock expired',
+                },
+              });
+            } catch (err: any) {
+              // If the local status update fails, do not release any listing
+              // whose payment was meant to be failed by this update.
+              for (const payment of pendingPayments) {
+                if (failedPaymentIds.includes(payment.id)) {
+                  releasableIds.delete(payment.resaleListingId);
+                }
+              }
+              this.logger.warn(
+                `Failed to fail pending payments for expired resale locks: ${err.message}`,
+              );
+            }
+          }
+
+          if (releasableIds.size > 0) {
+            const expired = await this.prisma.resaleListing.updateMany({
+              where: { ...expiredWhere, id: { in: [...releasableIds] } },
+              data: {
+                status: ResaleStatus.LISTED,
+                buyerId: null,
+                lockExpiresAt: null,
+              },
+            });
+            if (expired.count > 0) {
+              this.logger.log(`Expired ${expired.count} locked resale listings`);
+            }
+          }
+          return;
+        } catch (err: any) {
+          this.logger.warn(`Failed to clean up payments for expired resale locks: ${err.message}`);
+          return;
+        }
       }
     } finally {
       if (typeof token === 'string') {

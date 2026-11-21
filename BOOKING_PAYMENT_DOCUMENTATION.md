@@ -17,6 +17,7 @@
 7. [Frontend Pages & Components](#7-frontend-pages--components)
 8. [Hệ thống phụ trợ](#8-hệ-thống-phụ-trợ)
 9. [Kết quả Test thực tế](#9-kết-quả-test-thực-tế)
+10. [Deployment & Configuration](#10-deployment--configuration)
 
 ---
 
@@ -813,8 +814,8 @@ to honor it.
 | `GET` | `/tickets/event/:id` | JWT | Vé theo event |
 | `GET` | `/tickets/:code` | JWT | Vé theo code |
 | `POST` | `/tickets/:code/cancel` | JWT | Hủy vé (chỉ VALID) |
-| `GET` | `/tickets/:code/qr` | JWT | QR code PNG |
-| `GET` | `/tickets/:code/dynamic-qr` | JWT | Dynamic QR (TOTP 30s) |
+| `GET` | `/tickets/:code/qr` | JWT | QR code PNG (chỉ để hiển thị; **không hợp lệ để check-in**) |
+| `GET` | `/tickets/:code/dynamic-qr` | JWT | Dynamic QR (HMAC 30s) — **bắt buộc cho check-in** |
 
 ### 5.5 Queue APIs
 
@@ -848,9 +849,11 @@ to honor it.
 
 | Method | Endpoint | Auth | Mô tả |
 |--------|----------|------|--------|
-| `POST` | `/check-in` | JWT+Admin/Organizer | Check-in vé (FOR UPDATE lock; organizer chỉ được check-in vé của event mình) |
+| `POST` | `/check-in` | JWT+Admin/Organizer | Check-in vé (**bắt buộc dynamic QR** trong `qrCode`; FOR UPDATE lock; organizer chỉ được check-in vé của event mình) |
 | `GET` | `/check-in/event/:id` | JWT+Admin/Organizer | Danh sách check-ins (organizer chỉ xem event mình) |
 | `GET` | `/check-in/event/:eventId/count` | JWT+Admin/Organizer | Đếm check-ins thành công (organizer chỉ xem event mình) |
+
+> **Bắt buộc:** `POST /check-in` chỉ chấp nhận **dynamic QR code** (HMAC-SHA256, xoay mỗi 30s) từ `GET /tickets/:code/dynamic-qr`. Không có fallback sang QR tĩnh hay nhập thủ công `ticketCode`; backend cần `QR_SECRET` để verify (xem [10. Deployment & Configuration](#10-deployment--configuration)).
 
 ### 5.9 Resale APIs
 
@@ -911,7 +914,7 @@ to honor it.
 | `getMyTickets()` | Paginated, include event/venue/tier |
 | `cancelTicket()` | Chỉ VALID → CANCELLED + cancelledAt |
 | `getQrCode()` | Generate PNG via `qrcode` library |
-| `getDynamicQr()` | TOTP: HMAC-SHA256(ticketCode, timeSlot) → 8-char code, rotate mỗi 30 giây |
+| `getDynamicQr()` | HMAC-SHA256(ticketId\|eventId\|timeSlot\|expiresAt, `QR_SECRET`) → 12-char hex code, rotate mỗi 30 giây (**bắt buộc cho check-in**) |
 
 ### 6.4 CouponService
 
@@ -925,7 +928,7 @@ to honor it.
 
 | Method | Logic |
 |--------|-------|
-| `checkIn()` | **FOR UPDATE lock**: Find ticket by code → check VALID → check not already used → update USED + usedAt → create CheckIn record |
+| `checkIn()` | **FOR UPDATE lock (Serializable)**: Find ticket by code → **verify mandatory dynamic QR via `QR_SECRET`** (fail-closed nếu secret thiếu; sai/hết hạn → `successful: false`, không đổi trạng thái) → check VALID → check not already used → update USED + usedAt → create CheckIn record |
 
 ### 6.6 QueueService
 
@@ -1066,7 +1069,7 @@ Payment Status Transitions:
 | Rate Limiting | Per IP (NestJS throttle) |
 | Fraud Detection | ML risk scoring (velocity, patterns, bulk) |
 | Webhook Security | Stripe signature verification |
-| TOTP QR Code | Dynamic QR refreshes every 30 seconds |
+| Dynamic QR (mandatory) | HMAC-SHA256 with server-side `QR_SECRET`, refreshes every 30s; check-in rejects static QR and manual ticket code; fails closed when secret missing |
 | Check-in Lock | FOR UPDATE prevents double check-in |
 
 ### 8.4 Pricing System
@@ -1167,6 +1170,53 @@ User ──┬── Reservation ──── ReservationItem ──── Seat
        ├── AuditLog
        └── VerificationToken
 ```
+
+---
+
+## 10. DEPLOYMENT & CONFIGURATION
+
+### 10.1 Backend Secrets (bắt buộc)
+
+Backend đọc config qua `ConfigService` và truyền từ `.env` / `docker-compose.yml`. Các biến sau là **bắt buộc** khi deploy (compose dùng cú pháp `${VAR:?...}` → container sẽ không start nếu thiếu):
+
+| Biến | Bắt buộc | Mục đích |
+|------|----------|----------|
+| `DATABASE_URL` | Có | Prisma / PostgreSQL connection string |
+| `REDIS_PASSWORD` | Có | Xác thực Redis (seat locks) |
+| `JWT_SECRET` | Có | Ký access token + refresh token |
+| **`QR_SECRET`** | **Có** | **Secret dùng để ký và xác thực dynamic QR code (HMAC-SHA256). Không được để trống.** |
+| `ML_API_KEY` | Có | Xác thực call tới ML service |
+| `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` / `PAYPAL_WEBHOOK_ID` | Có | PayPal integration + webhook verification |
+| `MUX_TOKEN_ID` / `MUX_TOKEN_SECRET` | Có | Mux livestream tokens |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Không (tùy provider) | Stripe PaymentIntent + webhook signature |
+
+#### `QR_SECRET` — chi tiết
+
+- **Bắt buộc, server-side only.** Không được expose ra frontend hay commit vào repo. Sinh giá trị ngẫu nhiên dài (ví dụ `openssl rand -hex 32`) và lưu trong secret manager / `.env` của backend.
+- Docker Compose: `QR_SECRET: ${QR_SECRET:?QR_SECRET must be set}` — thiếu biến này thì backend service **không khởi động**.
+- Được dùng cho:
+  - `TicketService.getDynamicQr()`: ký payload `ticketId|eventId|timeSlot|expiresAt` bằng HMAC-SHA256, cắt 12 ký tự hex in hoa, xoay mỗi **30 giây** (`GET /tickets/:code/dynamic-qr`).
+  - `CheckInService.verifyQr()` / `verifyDynamicQrCode()`: xác thực mã QR lúc check-in bằng constant-time compare; chấp nhận slot hiện tại và slot ngay trước đó (tolerance 30s), chặn mã hết hạn / sai ticket / sai event.
+- **Fail-closed:** nếu `QR_SECRET` thiếu hoặc là chuỗi rỗng, backend trả `400 Bad Request: "Dynamic QR is unavailable: QR_SECRET is not configured"` thay vì fallback về mã QR tĩnh. Không được fallback về `qr_code_data` hay `ticketCode` để check-in.
+- Xoay/rotate secret: cần deploy lại backend và đồng bộ frontend (frontend fetch dynamic QR mỗi lần từ API, không tự ký). Mã QR cũ sẽ hết hạn tự nhiên trong vòng 30–60 giây.
+
+Ví dụ cấu hình tối thiểu trong `.env` (không commit giá trị thật):
+
+```
+QR_SECRET=<random-32-byte-hex-string>
+JWT_SECRET=<random-secret>
+DATABASE_URL=postgresql://...
+REDIS_PASSWORD=<redis-password>
+```
+
+### 10.2 Check-in — Dynamic QR là bắt buộc
+
+Luồng check-in **chỉ chấp nhận dynamic QR code** lấy từ `GET /tickets/:code/dynamic-qr`. Không có chế độ fallback sang mã QR tĩnh (`GET /tickets/:code/qr`) hay nhập thủ công `ticketCode` để chuyển vé sang `USED`.
+
+- Request `POST /check-in` bắt buộc có cả `ticketCode` và `qrCode` trong body (xem `CheckInDto`).
+- Trước khi đổi trạng thái, service lock dòng vé (`FOR UPDATE`, isolation `Serializable`) và verify `qrCode` với `QR_SECRET`. Mã sai/hết hạn → `successful: false`, `failureReason: "Invalid or expired QR code"`, **không** tạo CheckIn record, vé vẫn `VALID`.
+- Nếu `QR_SECRET` chưa được cấu hình, mọi attempt check-in trả lỗi fail-closed ở trên — đây là lỗi cấu hình, không phải lỗi vé.
+- Giao diện check-in dùng camera hoặc USB keyboard-wedge để đọc nội dung mã QR vào ô `ticketCode`/`qrCode` (scanner chỉ là cách nhập liệu; luôn phải có `qrCode` hợp lệ). QR xoay mỗi 30 giây nên phải quét mã đang hiển thị ngay lúc check-in.
 
 ---
 

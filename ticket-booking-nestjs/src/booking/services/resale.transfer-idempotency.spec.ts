@@ -1,5 +1,12 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { ResaleStatus, TicketStatus } from '../entities/enums';
+
+// ResaleService creates an ioredis client lazily in the cron path; keep unit tests offline.
+jest.mock('ioredis', () => {
+  const redis = { set: jest.fn().mockResolvedValue('OK'), eval: jest.fn(), disconnect: jest.fn() };
+  return { __esModule: true, default: jest.fn().mockImplementation(() => redis) };
+});
+
+import { PaymentStatus, ResaleStatus, TicketStatus } from '../entities/enums';
 import { ResaleService, ResaleRefundRequiredException } from './resale.service';
 
 /**
@@ -214,5 +221,202 @@ describe('ResaleService.completeResaleTransfer - concurrent idempotency', () => 
       service.confirmResalePayment('pi_resale', 'listing-1', 'buyer-1'),
     ).rejects.toThrow(ConflictException);
     expect(mockTx.ticket.create).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Resale lock expiry coverage: pending Stripe PaymentIntents must be cancelled
+ * before LOCKED listings are released. A charge that already succeeded keeps
+ * its local payment and listing intact for delayed webhook fulfillment; a
+ * failed DB update never unlocks the associated listing. Leader-lock logic is
+ * unchanged.
+ */
+describe('ResaleService.expireLockedListings - pending payment cleanup', () => {
+  let service: ResaleService;
+  let mockPrisma: any;
+  let cancel: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    cancel = jest.fn().mockResolvedValue({});
+    mockPrisma = {
+      resaleListing: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'listing-1' }]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      payment: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'pay-1', resaleListingId: 'listing-1', providerPaymentId: 'pi_expired' },
+        ]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    service = new ResaleService(
+      mockPrisma as any,
+      { get: jest.fn().mockReturnValue(null) } as any,
+    );
+    (service as any).stripeClient = { paymentIntents: { cancel } };
+  });
+
+  it('cancels the PaymentIntent and marks pending resale payments FAILED before releasing the lock', async () => {
+    const callOrder: string[] = [];
+    cancel.mockImplementation(async () => { callOrder.push('cancel'); return {}; });
+    mockPrisma.payment.updateMany.mockImplementation(async () => {
+      callOrder.push('fail-payments');
+      return { count: 1 };
+    });
+    mockPrisma.resaleListing.updateMany.mockImplementation(async () => {
+      callOrder.push('release-listings');
+      return { count: 1 };
+    });
+
+    await service.expireLockedListings();
+
+    expect(mockPrisma.payment.findMany).toHaveBeenCalledWith({
+      where: {
+        resaleListingId: { in: ['listing-1'] },
+        status: PaymentStatus.PENDING,
+      },
+    });
+    expect(cancel).toHaveBeenCalledWith('pi_expired');
+    expect(mockPrisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['pay-1'] } },
+      data: {
+        status: PaymentStatus.FAILED,
+        failureReason: 'Resale lock expired',
+      },
+    });
+    expect(mockPrisma.resaleListing.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        status: ResaleStatus.LOCKED,
+        id: { in: ['listing-1'] },
+      }),
+      data: {
+        status: ResaleStatus.LISTED,
+        buyerId: null,
+        lockExpiresAt: null,
+      },
+    });
+    // Stripe + DB payment cleanup happens before LOCKED -> LISTED.
+    expect(callOrder).toEqual(['cancel', 'fail-payments', 'release-listings']);
+  });
+
+  it('does not release a listing when no pending payment was successfully cancelled', async () => {
+    cancel.mockRejectedValueOnce(new Error('Stripe is down'));
+    const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
+
+    await service.expireLockedListings();
+
+    expect(cancel).toHaveBeenCalledWith('pi_expired');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Failed to cancel Stripe PaymentIntent pi_expired'));
+    // The Stripe cancel failed, so no payment is eligible to be failed and the
+    // listing must stay LOCKED for retry rather than being released.
+    expect(mockPrisma.payment.updateMany).not.toHaveBeenCalled();
+    expect(mockPrisma.resaleListing.updateMany).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('keeps payment PENDING and listing LOCKED when Stripe reports the charge already succeeded', async () => {
+    cancel.mockRejectedValueOnce(Object.assign(new Error('Charge already succeeded'), {
+      code: 'charge_already_succeeded',
+      statusCode: 400,
+    }));
+    const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
+
+    await service.expireLockedListings();
+
+    expect(mockPrisma.payment.updateMany).not.toHaveBeenCalled();
+    expect(mockPrisma.resaleListing.updateMany).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('already succeeded'));
+    warn.mockRestore();
+  });
+
+  it('recognizes already-succeeded errors by message and HTTP status alone', async () => {
+    cancel.mockRejectedValueOnce(Object.assign(new Error('PaymentIntent cannot be canceled: already succeeded'), {
+      status: 400,
+    }));
+
+    await service.expireLockedListings();
+
+    expect(mockPrisma.payment.updateMany).not.toHaveBeenCalled();
+    expect(mockPrisma.resaleListing.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps the listing LOCKED when payment.updateMany throws', async () => {
+    mockPrisma.payment.updateMany.mockRejectedValueOnce(new Error('DB write failed'));
+    const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
+
+    await service.expireLockedListings();
+
+    expect(cancel).toHaveBeenCalledWith('pi_expired');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Failed to fail pending payments'));
+    expect(mockPrisma.resaleListing.updateMany).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('releases only listings whose payments were cancelled or absent', async () => {
+    mockPrisma.resaleListing.findMany.mockResolvedValue([
+      { id: 'listing-succeeded' },
+      { id: 'listing-cancelled' },
+      { id: 'listing-no-payment' },
+    ]);
+    cancel.mockImplementation(async (providerPaymentId: string) => {
+      if (providerPaymentId === 'pi_succeeded') {
+        throw Object.assign(new Error('already succeeded'), { code: 'charge_already_succeeded' });
+      }
+      return {};
+    });
+    mockPrisma.payment.findMany.mockResolvedValue([
+      {
+        id: 'pay-succeeded',
+        resaleListingId: 'listing-succeeded',
+        providerPaymentId: 'pi_succeeded',
+      },
+      {
+        id: 'pay-cancelled',
+        resaleListingId: 'listing-cancelled',
+        providerPaymentId: 'pi_cancelled',
+      },
+    ]);
+
+    await service.expireLockedListings();
+
+    expect(mockPrisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['pay-cancelled'] } },
+      data: { status: PaymentStatus.FAILED, failureReason: 'Resale lock expired' },
+    });
+    expect(mockPrisma.resaleListing.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ['listing-cancelled', 'listing-no-payment'] },
+        }),
+      }),
+    );
+  });
+
+  it('fails a pending payment with no provider intent before releasing its listing', async () => {
+    mockPrisma.payment.findMany.mockResolvedValue([
+      { id: 'pay-local', resaleListingId: 'listing-1', providerPaymentId: null },
+    ]);
+
+    await service.expireLockedListings();
+
+    expect(cancel).not.toHaveBeenCalled();
+    expect(mockPrisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['pay-local'] } },
+      data: { status: PaymentStatus.FAILED, failureReason: 'Resale lock expired' },
+    });
+    expect(mockPrisma.resaleListing.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips payment cleanup entirely when no listings expired', async () => {
+    mockPrisma.resaleListing.findMany.mockResolvedValueOnce([]);
+
+    await service.expireLockedListings();
+
+    expect(mockPrisma.payment.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.payment.updateMany).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(mockPrisma.resaleListing.updateMany).not.toHaveBeenCalled();
   });
 });
