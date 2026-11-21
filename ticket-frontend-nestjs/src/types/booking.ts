@@ -254,6 +254,8 @@ export interface TicketResponse {
 
 export interface CheckInRequest {
   ticketCode: string;
+  /** Always sent by the admin check-in UI; required by the backend DTO. */
+  qrCode?: string;
   latitude?: number;
   longitude?: number;
   deviceInfo?: string;
@@ -420,9 +422,6 @@ export interface DynamicPriceInfo {
 /* ===== Dynamic QR types ===== */
 
 export interface DynamicQrResponse {
-  qrData: string;
-  isDynamic: boolean;
-  ticketCode: string;
-  secondsRemaining?: number;
-  refreshInterval?: number;
+  code: string;
+  expiresAt: string;
 }

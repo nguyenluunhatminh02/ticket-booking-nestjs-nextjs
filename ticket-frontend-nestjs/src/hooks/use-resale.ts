@@ -78,9 +78,13 @@ export function useLockResaleListing() {
 
 export function usePurchaseResaleListing() {
   const queryClient = useQueryClient();
-  return useMutation<ResaleListingResponse, Error, string>({
-    mutationFn: async (listingId) => {
-      const { data } = await apiClient.post(`/resale/${listingId}/purchase`);
+  return useMutation<ResaleListingResponse, Error, { listingId: string; paymentIntentId: string }>({
+    mutationFn: async ({ listingId, paymentIntentId }) => {
+      // The backend exposes a two-step flow; the old single-call /purchase
+      // route never existed. Pass the Stripe PaymentIntent id from checkout.
+      const { data } = await apiClient.post(`/resale/${listingId}/confirm-payment`, {
+        paymentIntentId,
+      });
       return data;
     },
     onSuccess: () => {

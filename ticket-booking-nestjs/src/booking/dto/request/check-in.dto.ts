@@ -16,4 +16,9 @@ export class CheckInDto {
   @IsOptional()
   @IsString()
   deviceInfo?: string;
+
+  /** Mandatory rotating QR code, verified against the locked ticket. */
+  @IsNotEmpty()
+  @IsString()
+  qrCode: string;
 }

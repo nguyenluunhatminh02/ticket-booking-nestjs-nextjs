@@ -546,6 +546,11 @@ model Reservation {
   payments Payment[]
   tickets  Ticket[]
 
+  // getUserReservations() / fraud checks filter by userId, so the leading
+  // column covers both by user and by (userId, status). The expiry cron scans
+  // PENDING rows by expiration time.
+  @@index([userId, createdAt])
+  @@index([status, expiresAt])
   @@map("reservations")
 }
 
@@ -593,6 +598,10 @@ model Ticket {
   resaleOriginal ResaleListing[] @relation("ResaleOriginalTicket")
   resaleNew      ResaleListing[] @relation("ResaleNewTicket")
 
+  // getMyTickets()/getTicketsByEvent() paginate by issuedAt; refund and
+  // cancellation flows look up tickets by reservationId and status.
+  @@index([userId, issuedAt])
+  @@index([reservationId, status])
   @@map("tickets")
 }
 
@@ -616,6 +625,11 @@ model Payment {
   resaleListing ResaleListing? @relation(fields: [resaleListingId], references: [id])
   user          User           @relation(fields: [userId], references: [id])
 
+  // Payment lookups are dominated by reservationId (with status/createdAt for
+  // refunds) and by userId for fraud analysis. The unique provider_payment_id
+  // index already covers webhook lookups.
+  @@index([reservationId, status, createdAt])
+  @@index([userId, status])
   @@map("payments")
 }
 
@@ -709,6 +723,10 @@ model ResaleListing {
   newTicket      Ticket? @relation("ResaleNewTicket", fields: [newTicketId], references: [id])
   payments       Payment[]
 
+  // getUserListings() filters by sellerId; the marketplace filters by status
+  // and the lock-expiry cron scans LOCKED rows by lock expiry.
+  @@index([sellerId, status])
+  @@index([status, lockExpiresAt])
   @@map("resale_listings")
 }
 
@@ -749,6 +767,9 @@ model CheckIn {
   event       Event  @relation(fields: [eventId], references: [id])
   checkedInBy User   @relation("CheckInUser", fields: [checkedInById], references: [id])
 
+  // Event check-in listing and dashboard counts both filter by eventId; the
+  // listing additionally orders by checkedInAt.
+  @@index([eventId, checkedInAt])
   @@map("check_ins")
 }
 
@@ -767,5 +788,9 @@ model QueueEntry {
   user  User  @relation(fields: [userId], references: [id])
   event Event @relation(fields: [eventId], references: [id])
 
+  // joinQueue() checks an active entry for (eventId, userId, status); the
+  // promotion cron ranks waiting entries by position for each event.
+  @@index([eventId, userId, status])
+  @@index([eventId, status, position])
   @@map("queue_entries")
 }

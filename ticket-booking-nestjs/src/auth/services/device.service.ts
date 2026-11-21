@@ -85,7 +85,8 @@ export class DeviceService {
   async deactivateDevice(userId: string, deviceId: string): Promise<void> {
     await this.prisma.userDevice.updateMany({
       where: { userId, deviceId },
-      data: { active: false },
+      // Clear trust as well: an inactive device must never bypass MFA.
+      data: { active: false, trusted: false },
     });
     await this.tokenService.revokeDeviceSession(userId, deviceId);
   }
@@ -118,7 +119,8 @@ export class DeviceService {
 
   async isDeviceTrusted(userId: string, deviceId: string): Promise<boolean> {
     const device = await this.prisma.userDevice.findFirst({
-      where: { userId, deviceId },
+      // An inactive/deactivated device must never be treated as trusted.
+      where: { userId, deviceId, active: true },
     });
     return device?.trusted || false;
   }

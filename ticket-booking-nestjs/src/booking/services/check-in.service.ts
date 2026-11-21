@@ -1,12 +1,25 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TicketStatus } from '../entities/enums';
 import { CheckInDto } from '../dto';
 import { CheckInResponseDto } from '../dto/response/check-in-response.dto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { verifyDynamicQrCode } from './ticket.service';
 
 @Injectable()
 export class CheckInService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private configService?: ConfigService,
+  ) {}
+
+  private verifyQr(ticket: any, presentedCode: string): boolean {
+    const secret = this.configService?.get<string>('QR_SECRET');
+    if (!secret || typeof secret !== 'string' || secret.trim().length === 0) {
+      throw new BadRequestException('Dynamic QR is unavailable: QR_SECRET is not configured');
+    }
+    return verifyDynamicQrCode(ticket, presentedCode, secret);
+  }
 
   async checkIn(dto: CheckInDto, checkedInBy: any): Promise<CheckInResponseDto> {
     // Use transaction with pessimistic lock to prevent double check-in
@@ -17,6 +30,11 @@ export class CheckInService {
 
       if (!ticket) {
         return this.failedResponse(dto.ticketCode, 'Ticket not found');
+      }
+      // Verify the rotating code against the locked row BEFORE any state change.
+      // A QR code is mandatory: there is no path that marks a ticket USED without it.
+      if (!this.verifyQr(ticket, dto.qrCode)) {
+        return this.failedResponse(dto.ticketCode, 'Invalid or expired QR code');
       }
       if (ticket.status === TicketStatus.USED) {
         return this.failedResponse(dto.ticketCode, 'Ticket already used');

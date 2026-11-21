@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { Ticket, Reservation, Event } from '../entities';
 import { TicketStatus } from '../entities/enums';
@@ -6,10 +8,92 @@ import { TicketResponseDto } from '../dto/response/ticket-response.dto';
 import { User } from '../../auth/entities/user.entity';
 import { PrismaService } from '../../prisma/prisma.service';
 
+/** 30-second rotation window. The immediately preceding slot is also accepted
+ * to tolerate a code generated just before a roll or slight clock skew. */
+export const DYNAMIC_QR_WINDOW_MS = 30_000;
+
+/** 128 bits of randomness: 32 hex chars, keeping the human-readable TKT- prefix. */
+function generateTicketCode(): string {
+  return `TKT-${uuidv4().replace(/-/g, '').toUpperCase()}`;
+}
+
+function isTicketCodeCollision(error: any): boolean {
+  // Prisma P2002 = unique constraint violation; only retry when the ticket code is the culprit.
+  return error?.code === 'P2002'
+    && (error?.meta?.target == null || String(error.meta.target).includes('ticket'));
+}
+
+/** Canonical, unambiguous payload representation shared by generation and verification. */
+export interface DynamicQrClaims {
+  ticketId: string;
+  eventId: string;
+  timeSlot: number;
+  expiresAt: number;
+}
+
+/** Fields needed to render/verify a QR. Raw lock rows use snake_case, Prisma rows camelCase. */
+export interface DynamicQrTicket {
+  id: string;
+  ticketCode?: string;
+  ticket_code?: string;
+  eventId?: string;
+  event_id?: string;
+}
+
+/** Fail closed if the server-side secret is absent: never fall back to public data. */
+export function getDynamicQrSecret(configService?: ConfigService): string {
+  const secret = configService?.get<string>('QR_SECRET');
+  if (!secret || typeof secret !== 'string' || secret.trim().length === 0) {
+    throw new BadRequestException('Dynamic QR is unavailable: QR_SECRET is not configured');
+  }
+  return secret;
+}
+
+/** code = HMAC-SHA256(payload, secret).hex.slice(0, 12).toUpperCase() */
+export function computeDynamicQrCode(claims: DynamicQrClaims, secret: string): string {
+  const payload = `${claims.ticketId}|${claims.eventId}|${claims.timeSlot}|${claims.expiresAt}`;
+  return createHmac('sha256', secret).update(payload).digest('hex').slice(0, 12).toUpperCase();
+}
+
+/**
+ * Constant-time verification of a dynamic QR code.
+ * Accepts the current slot and the previous slot (30s tolerance); rejects codes
+ * that are expired, malformed, or bound to a different ticket/event.
+ */
+export function verifyDynamicQrCode(
+  ticket: DynamicQrTicket,
+  code: string,
+  secret: string,
+  now: number = Date.now(),
+): boolean {
+  const ticketId = ticket?.id;
+  const eventId = ticket?.eventId ?? ticket?.event_id;
+  if (!ticketId || !eventId || typeof code !== 'string') return false;
+
+  const presented = code.trim().toUpperCase();
+  if (!/^[0-9A-F]{12}$/.test(presented)) return false;
+
+  const currentSlot = Math.floor(now / DYNAMIC_QR_WINDOW_MS);
+  let matched = false;
+  for (const timeSlot of [currentSlot, currentSlot - 1]) {
+    const expiresAt = (timeSlot + 1) * DYNAMIC_QR_WINDOW_MS;
+    // A previous-slot code is valid for one additional window after its expiry.
+    const effectiveExpiry = expiresAt + (timeSlot === currentSlot ? 0 : DYNAMIC_QR_WINDOW_MS);
+    if (effectiveExpiry <= now) continue;
+
+    const expected = computeDynamicQrCode({ ticketId, eventId, timeSlot, expiresAt }, secret);
+    // Accumulate instead of short-circuiting so both slots are always compared.
+    matched = timingSafeEqual(Buffer.from(expected, 'ascii'), Buffer.from(presented, 'ascii')) || matched;
+  }
+  return matched;
+}
+
 @Injectable()
 export class TicketService {
   constructor(
     private prisma: PrismaService,
+    // Optional to keep legacy direct instantiations working; Nest injects ConfigService.
+    private configService?: ConfigService,
   ) {}
 
   async issueTicketsForReservation(reservation: Reservation, tx?: any): Promise<Ticket[]> {
@@ -18,36 +102,45 @@ export class TicketService {
     if (existing.length > 0) return existing as unknown as Ticket[];
     const tickets: Ticket[] = [];
     for (const item of (reservation.items ?? [])) {
-      const ticketCode = 'TKT-' + uuidv4().replace(/-/g, '').substring(0, 8).toUpperCase();
-      const qrData = JSON.stringify({
-        ticketCode,
-        eventId: reservation.eventId,
-        tierId: item.tierId,
-        seatId: item.seatId,
-        ts: Date.now(),
-      });
-
-      const ticket = await client.ticket.create({
-        data: {
+      let created: any;
+      // A 128-bit code makes collisions negligible; retry a few times if one still occurs.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const ticketCode = generateTicketCode();
+        const qrData = JSON.stringify({
           ticketCode,
-          reservationId: reservation.id,
-          userId: reservation.userId,
           eventId: reservation.eventId,
           tierId: item.tierId,
           seatId: item.seatId,
-          qrCodeData: qrData,
-          status: TicketStatus.VALID as any,
-          tierName: item.tier?.name,
-          seatLabel: item.seat?.rowName
-            ? `${item.seat.rowName}${item.seat.seatNumber}`
-            : item.seat
-              ? `Seat ${item.seat.seatNumber}`
-              : null,
-          price: item.priceAtBooking,
-          currency: reservation.currency || 'USD',
-        },
-      });
-      tickets.push(ticket as unknown as Ticket);
+          ts: Date.now(),
+        });
+
+        try {
+          created = await client.ticket.create({
+            data: {
+              ticketCode,
+              reservationId: reservation.id,
+              userId: reservation.userId,
+              eventId: reservation.eventId,
+              tierId: item.tierId,
+              seatId: item.seatId,
+              qrCodeData: qrData,
+              status: TicketStatus.VALID as any,
+              tierName: item.tier?.name,
+              seatLabel: item.seat?.rowName
+                ? `${item.seat.rowName}${item.seat.seatNumber}`
+                : item.seat
+                  ? `Seat ${item.seat.seatNumber}`
+                  : null,
+              price: item.priceAtBooking,
+              currency: reservation.currency || 'USD',
+            },
+          });
+          break;
+        } catch (error: any) {
+          if (!isTicketCodeCollision(error) || attempt === 2) throw error;
+        }
+      }
+      tickets.push(created as unknown as Ticket);
     }
     return tickets;
   }
@@ -138,20 +231,29 @@ export class TicketService {
     return QRCode.toBuffer(ticket.qrCodeData || ticket.ticketCode);
   }
 
+  /** Server-side secret + ticket/event identity + time slot. The public ticket
+   * code is never used as an HMAC key (it is printed on every ticket). */
   async getDynamicQr(ticketCode: string, userId: string): Promise<{ code: string; expiresAt: Date }> {
     const ticket = await this.prisma.ticket.findUnique({ where: { ticketCode } });
     if (!ticket) throw new NotFoundException('Ticket not found');
     if (ticket.userId !== userId) throw new BadRequestException('Not authorized');
 
-    // Generate a TOTP-like rotating code (simplified)
-    const timeSlot = Math.floor(Date.now() / 30000); // 30-second window
-    const crypto = require('crypto');
-    const hmac = crypto.createHmac('sha256', ticket.ticketCode);
-    hmac.update(String(timeSlot));
-    const code = hmac.digest('hex').substring(0, 8).toUpperCase();
-    const expiresAt = new Date((timeSlot + 1) * 30000);
+    const now = Date.now();
+    const timeSlot = Math.floor(now / DYNAMIC_QR_WINDOW_MS);
+    const expiresAt = (timeSlot + 1) * DYNAMIC_QR_WINDOW_MS;
+    const secret = getDynamicQrSecret(this.configService);
+    const code = computeDynamicQrCode(
+      { ticketId: ticket.id, eventId: ticket.eventId, timeSlot, expiresAt },
+      secret,
+    );
 
-    return { code, expiresAt };
+    return { code, expiresAt: new Date(expiresAt) };
+  }
+
+  /** Verifier used by check-in against the locked ticket row. */
+  checkDynamicQr(ticket: DynamicQrTicket, code: string, now: number = Date.now()): boolean {
+    const secret = getDynamicQrSecret(this.configService);
+    return verifyDynamicQrCode(ticket, code, secret, now);
   }
 
   async getTicketEntity(ticketCode: string): Promise<Ticket> {

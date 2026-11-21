@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMyTickets, useCancelTicket, useTicketQrCode, useDynamicQr } from "@/hooks/use-tickets";
+import { useMyTickets, useCancelTicket, useDynamicQr } from "@/hooks/use-tickets";
 import { useListForResale } from "@/hooks/use-resale";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import Link from "next/link";
 import { Ticket, CalendarDays, MapPin, QrCode, XCircle, Search, ChevronLeft, ChevronRight, Monitor, Loader2, ArrowRightLeft, RefreshCw, AlertCircle } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import type { TicketStatus } from "@/types/booking";
 import { useTranslation } from "@/lib/i18n";
 import { getErrorMessage } from "@/lib/api-client";
@@ -206,61 +207,44 @@ export default function MyTicketsPage() {
 
 function DynamicQrDisplay({ ticketCode }: { ticketCode: string }) {
   const { data: dynamicQr, isLoading: dynLoading, isError: dynError } = useDynamicQr(ticketCode);
-  const { data: qrUrl, isLoading: staticLoading, isError: staticError } = useTicketQrCode(
-    // Only fetch static QR when dynamic isn't available
-    dynamicQr?.isDynamic === false || dynError ? ticketCode : null
-  );
   const { t } = useTranslation();
 
-  const isLoading = dynLoading || (dynError && staticLoading);
+  const secondsRemaining = dynamicQr
+    ? Math.max(0, Math.ceil((new Date(dynamicQr.expiresAt).getTime() - Date.now()) / 1000))
+    : 0;
 
   return (
     <div className="mt-4 pt-4 border-t flex flex-col items-center gap-2">
-      {isLoading && (
+      {dynLoading && (
         <div className="w-48 h-48 border rounded-lg flex items-center justify-center bg-muted">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       )}
 
-      {/* Dynamic TOTP QR */}
-      {dynamicQr?.isDynamic && !dynLoading && (
+      {dynError && (
+        <div className="w-48 h-48 border rounded-lg flex items-center justify-center bg-destructive/10">
+          <p className="text-sm text-destructive text-center px-4">{t("tickets.qrLoadFailed")}</p>
+        </div>
+      )}
+
+      {dynamicQr && !dynLoading && (
         <>
           <div className="relative">
             <div className="w-48 h-48 border rounded-lg p-3 bg-white flex items-center justify-center">
-              <div className="text-center">
-                <QrCode className="h-16 w-16 text-primary mx-auto mb-2" />
-                <p className="text-xs font-mono break-all text-muted-foreground">
-                  {dynamicQr.qrData}
-                </p>
-              </div>
+              {/* Encode the rotating code as a real QR so the admin camera scanner can read it. */}
+              <QRCodeSVG value={dynamicQr.code} size={168} level="M" includeMargin={false} />
             </div>
-            {/* Countdown ring */}
+            <p className="text-[10px] font-mono break-all text-muted-foreground max-w-[192px] text-center">
+              {dynamicQr.code}
+            </p>
             <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center shadow-md">
-              {dynamicQr.secondsRemaining}s
+              {secondsRemaining}s
             </div>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <RefreshCw className="h-3 w-3 animate-spin" />
-            Dynamic QR - auto-refreshes every {dynamicQr.refreshInterval}s
+            Dynamic QR - auto-refreshes every 30s
           </div>
-        </>
-      )}
-
-      {/* Static QR fallback */}
-      {(dynError || dynamicQr?.isDynamic === false) && !staticLoading && (
-        <>
-          {staticError && (
-            <div className="w-48 h-48 border rounded-lg flex items-center justify-center bg-destructive/10">
-              <p className="text-sm text-destructive text-center px-4">{t("tickets.qrLoadFailed")}</p>
-            </div>
-          )}
-          {qrUrl && (
-            <img
-              src={qrUrl}
-              alt={`QR Code for ${ticketCode}`}
-              className="w-48 h-48 border rounded-lg p-2 bg-white"
-            />
-          )}
         </>
       )}
 

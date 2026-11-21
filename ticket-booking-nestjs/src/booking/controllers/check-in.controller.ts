@@ -64,4 +64,23 @@ export class CheckInController {
 
     return this.checkInService.getCheckInsByEvent(eventId, page, size);
   }
+
+  @Roles('ROLE_ADMIN', 'ROLE_ORGANIZER')
+  @Get('event/:eventId/count')
+  async getCheckInCount(
+    @Param('eventId') eventId: string,
+    @CurrentUser() user: User,
+  ) {
+    const roles: string[] = (user as any).roles || [];
+    const isAdmin = roles.includes('ROLE_ADMIN');
+
+    if (!isAdmin) {
+      const event = await this.prisma.event.findUnique({ where: { id: eventId } });
+      if (!event || event.createdById !== user.id) {
+        throw new ForbiddenException('You do not have access to this event');
+      }
+    }
+
+    return this.checkInService.getCheckInCount(eventId);
+  }
 }

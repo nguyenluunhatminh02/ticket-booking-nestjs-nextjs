@@ -17,6 +17,7 @@
 7. [Frontend Pages & Components](#7-frontend-pages--components)
 8. [Hệ thống phụ trợ](#8-hệ-thống-phụ-trợ)
 9. [Kết quả Test thực tế](#9-kết-quả-test-thực-tế)
+10. [Deployment & Configuration](#10-deployment--configuration)
 
 ---
 
@@ -492,7 +493,7 @@ async reserveTickets(dto, user) {
   - Order Summary (tier, seat label, price per item, total)
   - Countdown timer (15 phút, hiển thị MM:SS)
   - Coupon code input + Check/Apply button
-  - Payment method selection (STRIPE / PAYPAL / PAYOS)
+  - Payment method selection (hiện chỉ STRIPE được bật; PAYPAL/PAYOS chưa được hỗ trợ bởi `initiatePayment`)
   - Pay button với total amount
   - Cancel Reservation button
 
@@ -720,6 +721,53 @@ async refundPayment(reservationId, userId) {
 - Nếu success: Auto-redirect to `/reservations/:id` sau 5 giây countdown
 - Nếu error: Hiển thị error message + "Try again" button
 
+### 4.9 Seller Payout (Resale) — STATUS: SIMULATED / NOT INTEGRATED
+
+> **Important:** The seller payout in the resale flow is **recorded in the database only**.
+> It is **NOT** wired to Stripe Connect, Stripe Transfers, or any external payout provider.
+> No money is actually moved to the seller’s bank account or Stripe Connected Account
+> when a resale completes. The fields are bookkeeping placeholders for a future integration.
+
+**What the code does today (simulation only):**
+
+When a seller calls `POST /resale/list`, `ResaleService.listForResale()` computes and persists
+three numeric fields on the `ResaleListing` row:
+
+| Field | Formula | Meaning |
+|-------|---------|---------|
+| `platformFeePercent` | `5` (hard-coded) | Platform take rate (%) |
+| `platformFeeAmount` | `askingPrice * 5 / 100` | Amount the platform keeps |
+| `sellerPayout` | `askingPrice - platformFeeAmount` | Amount the seller *would* receive |
+
+When the buyer’s payment succeeds, `completePurchase()` transitions the listing to `SOLD`
+and re-issues the ticket to the buyer. The `sellerPayout` value is **not** sent anywhere —
+it remains a column on the listing row. The buyer’s full `askingPrice` is charged via the
+normal Stripe PaymentIntent and lands in the platform’s own Stripe account; no split,
+transfer, or Connected Account payout is created.
+
+**What a production integration would require (not implemented):**
+
+1. **Stripe Connect onboarding** — each seller must create a Stripe Connected Account
+   (Express or Custom) and complete KYC. The `User` model would need a `stripeAccountId`
+   column and an onboarding flow (`/v1/account_links`, `/v1/accounts/:id`).
+2. **Charge model change** — switch from a plain PaymentIntent to one of:
+   - *Destination charges* with `transfer_data.destination = seller.stripeAccountId` and
+     `application_fee_amount = platformFeeAmount`, or
+   - *Separate charges & transfers* via `stripe.transfers.create({ amount, currency,
+     destination: seller.stripeAccountId })` after the buyer’s charge succeeds.
+3. **Payout reconciliation** — a cron/job that reconciles `ResaleListing.sellerPayout`
+   rows with Stripe Transfer/Payout events, handles failures, and exposes a seller
+   dashboard (available balance, pending payout, payout history).
+4. **Refunds & disputes** — propagate `refundPayment()` through `stripe.refunds.create`
+   and reverse the corresponding transfer; handle chargebacks via Stripe webhooks
+   (`transfer.reversed`, `charge.dispute.*`).
+5. **Compliance & tax** — 1099-K / local tax reporting for sellers above thresholds,
+   terms of service, country/region restrictions, and sanctions screening.
+
+Until the above is built, **treat `sellerPayout` as an informational field only**.
+Operators must settle sellers out-of-band (e.g., manual bank transfer) if they choose
+to honor it.
+
 ---
 
 ## 5. API ENDPOINTS CHI TIẾT
@@ -766,8 +814,8 @@ async refundPayment(reservationId, userId) {
 | `GET` | `/tickets/event/:id` | JWT | Vé theo event |
 | `GET` | `/tickets/:code` | JWT | Vé theo code |
 | `POST` | `/tickets/:code/cancel` | JWT | Hủy vé (chỉ VALID) |
-| `GET` | `/tickets/:code/qr` | JWT | QR code PNG |
-| `GET` | `/tickets/:code/dynamic-qr` | JWT | Dynamic QR (TOTP 30s) |
+| `GET` | `/tickets/:code/qr` | JWT | QR code PNG (chỉ để hiển thị; **không hợp lệ để check-in**) |
+| `GET` | `/tickets/:code/dynamic-qr` | JWT | Dynamic QR (HMAC 30s) — **bắt buộc cho check-in** |
 
 ### 5.5 Queue APIs
 
@@ -801,9 +849,11 @@ async refundPayment(reservationId, userId) {
 
 | Method | Endpoint | Auth | Mô tả |
 |--------|----------|------|--------|
-| `POST` | `/check-in` | JWT | Check-in vé (FOR UPDATE lock) |
-| `GET` | `/check-in/event/:id` | JWT+Admin | Danh sách check-ins |
-| `GET` | `/check-in/event/:id/count` | JWT+Admin | Đếm check-ins thành công |
+| `POST` | `/check-in` | JWT+Admin/Organizer | Check-in vé (**bắt buộc dynamic QR** trong `qrCode`; FOR UPDATE lock; organizer chỉ được check-in vé của event mình) |
+| `GET` | `/check-in/event/:id` | JWT+Admin/Organizer | Danh sách check-ins (organizer chỉ xem event mình) |
+| `GET` | `/check-in/event/:eventId/count` | JWT+Admin/Organizer | Đếm check-ins thành công (organizer chỉ xem event mình) |
+
+> **Bắt buộc:** `POST /check-in` chỉ chấp nhận **dynamic QR code** (HMAC-SHA256, xoay mỗi 30s) từ `GET /tickets/:code/dynamic-qr`. Không có fallback sang QR tĩnh hay nhập thủ công `ticketCode`; backend cần `QR_SECRET` để verify (xem [10. Deployment & Configuration](#10-deployment--configuration)).
 
 ### 5.9 Resale APIs
 
@@ -815,7 +865,8 @@ async refundPayment(reservationId, userId) {
 | `GET` | `/resale/:id` | Public | Chi tiết listing |
 | `POST` | `/resale/list` | JWT | **Đăng bán vé** (max 150%) |
 | `POST` | `/resale/:id/lock` | JWT | **Lock listing** (10 phút) |
-| `POST` | `/resale/:id/purchase` | JWT | **Mua vé** (cancel old, issue new) |
+| `POST` | `/resale/:id/payment` | JWT | **Bước 1 mua vé**: tạo Stripe PaymentIntent cho listing |
+| `POST` | `/resale/:id/confirm-payment` | JWT | **Bước 2 mua vé**: xác nhận `paymentIntentId`, cancel old ticket & issue new ticket |
 | `POST` | `/resale/:id/cancel` | JWT | Hủy listing |
 
 ### 5.10 WebSocket Events
@@ -849,7 +900,7 @@ async refundPayment(reservationId, userId) {
 
 | Method | Logic |
 |--------|-------|
-| `getAvailableProviders()` | Check Stripe key configured → return list |
+| `getAvailableProviders()` | Check Stripe key configured → chỉ trả về STRIPE. PAYPAL/PAYOS chưa được implement (`initiatePayment` reject) nên không được advertise, dù enum vẫn định nghĩa cả ba. |
 | `initiatePayment()` | Cancel old payments → extend expiry 30min → create Stripe PaymentIntent → save payment record |
 | `confirmStripePayment()` | **Serializable TX**: Idempotent check → lock payment FOR UPDATE → COMPLETED → confirm reservation → issue tickets |
 | `refundPayment()` | payment REFUNDED → release reservation → restore seats/counts |
@@ -863,7 +914,7 @@ async refundPayment(reservationId, userId) {
 | `getMyTickets()` | Paginated, include event/venue/tier |
 | `cancelTicket()` | Chỉ VALID → CANCELLED + cancelledAt |
 | `getQrCode()` | Generate PNG via `qrcode` library |
-| `getDynamicQr()` | TOTP: HMAC-SHA256(ticketCode, timeSlot) → 8-char code, rotate mỗi 30 giây |
+| `getDynamicQr()` | HMAC-SHA256(ticketId\|eventId\|timeSlot\|expiresAt, `QR_SECRET`) → 12-char hex code, rotate mỗi 30 giây (**bắt buộc cho check-in**) |
 
 ### 6.4 CouponService
 
@@ -877,7 +928,7 @@ async refundPayment(reservationId, userId) {
 
 | Method | Logic |
 |--------|-------|
-| `checkIn()` | **FOR UPDATE lock**: Find ticket by code → check VALID → check not already used → update USED + usedAt → create CheckIn record |
+| `checkIn()` | **FOR UPDATE lock (Serializable)**: Find ticket by code → **verify mandatory dynamic QR via `QR_SECRET`** (fail-closed nếu secret thiếu; sai/hết hạn → `successful: false`, không đổi trạng thái) → check VALID → check not already used → update USED + usedAt → create CheckIn record |
 
 ### 6.6 QueueService
 
@@ -1018,7 +1069,7 @@ Payment Status Transitions:
 | Rate Limiting | Per IP (NestJS throttle) |
 | Fraud Detection | ML risk scoring (velocity, patterns, bulk) |
 | Webhook Security | Stripe signature verification |
-| TOTP QR Code | Dynamic QR refreshes every 30 seconds |
+| Dynamic QR (mandatory) | HMAC-SHA256 with server-side `QR_SECRET`, refreshes every 30s; check-in rejects static QR and manual ticket code; fails closed when secret missing |
 | Check-in Lock | FOR UPDATE prevents double check-in |
 
 ### 8.4 Pricing System
@@ -1119,6 +1170,53 @@ User ──┬── Reservation ──── ReservationItem ──── Seat
        ├── AuditLog
        └── VerificationToken
 ```
+
+---
+
+## 10. DEPLOYMENT & CONFIGURATION
+
+### 10.1 Backend Secrets (bắt buộc)
+
+Backend đọc config qua `ConfigService` và truyền từ `.env` / `docker-compose.yml`. Các biến sau là **bắt buộc** khi deploy (compose dùng cú pháp `${VAR:?...}` → container sẽ không start nếu thiếu):
+
+| Biến | Bắt buộc | Mục đích |
+|------|----------|----------|
+| `DATABASE_URL` | Có | Prisma / PostgreSQL connection string |
+| `REDIS_PASSWORD` | Có | Xác thực Redis (seat locks) |
+| `JWT_SECRET` | Có | Ký access token + refresh token |
+| **`QR_SECRET`** | **Có** | **Secret dùng để ký và xác thực dynamic QR code (HMAC-SHA256). Không được để trống.** |
+| `ML_API_KEY` | Có | Xác thực call tới ML service |
+| `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` / `PAYPAL_WEBHOOK_ID` | Có | PayPal integration + webhook verification |
+| `MUX_TOKEN_ID` / `MUX_TOKEN_SECRET` | Có | Mux livestream tokens |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Không (tùy provider) | Stripe PaymentIntent + webhook signature |
+
+#### `QR_SECRET` — chi tiết
+
+- **Bắt buộc, server-side only.** Không được expose ra frontend hay commit vào repo. Sinh giá trị ngẫu nhiên dài (ví dụ `openssl rand -hex 32`) và lưu trong secret manager / `.env` của backend.
+- Docker Compose: `QR_SECRET: ${QR_SECRET:?QR_SECRET must be set}` — thiếu biến này thì backend service **không khởi động**.
+- Được dùng cho:
+  - `TicketService.getDynamicQr()`: ký payload `ticketId|eventId|timeSlot|expiresAt` bằng HMAC-SHA256, cắt 12 ký tự hex in hoa, xoay mỗi **30 giây** (`GET /tickets/:code/dynamic-qr`).
+  - `CheckInService.verifyQr()` / `verifyDynamicQrCode()`: xác thực mã QR lúc check-in bằng constant-time compare; chấp nhận slot hiện tại và slot ngay trước đó (tolerance 30s), chặn mã hết hạn / sai ticket / sai event.
+- **Fail-closed:** nếu `QR_SECRET` thiếu hoặc là chuỗi rỗng, backend trả `400 Bad Request: "Dynamic QR is unavailable: QR_SECRET is not configured"` thay vì fallback về mã QR tĩnh. Không được fallback về `qr_code_data` hay `ticketCode` để check-in.
+- Xoay/rotate secret: cần deploy lại backend và đồng bộ frontend (frontend fetch dynamic QR mỗi lần từ API, không tự ký). Mã QR cũ sẽ hết hạn tự nhiên trong vòng 30–60 giây.
+
+Ví dụ cấu hình tối thiểu trong `.env` (không commit giá trị thật):
+
+```
+QR_SECRET=<random-32-byte-hex-string>
+JWT_SECRET=<random-secret>
+DATABASE_URL=postgresql://...
+REDIS_PASSWORD=<redis-password>
+```
+
+### 10.2 Check-in — Dynamic QR là bắt buộc
+
+Luồng check-in **chỉ chấp nhận dynamic QR code** lấy từ `GET /tickets/:code/dynamic-qr`. Không có chế độ fallback sang mã QR tĩnh (`GET /tickets/:code/qr`) hay nhập thủ công `ticketCode` để chuyển vé sang `USED`.
+
+- Request `POST /check-in` bắt buộc có cả `ticketCode` và `qrCode` trong body (xem `CheckInDto`).
+- Trước khi đổi trạng thái, service lock dòng vé (`FOR UPDATE`, isolation `Serializable`) và verify `qrCode` với `QR_SECRET`. Mã sai/hết hạn → `successful: false`, `failureReason: "Invalid or expired QR code"`, **không** tạo CheckIn record, vé vẫn `VALID`.
+- Nếu `QR_SECRET` chưa được cấu hình, mọi attempt check-in trả lỗi fail-closed ở trên — đây là lỗi cấu hình, không phải lỗi vé.
+- Giao diện check-in dùng camera hoặc USB keyboard-wedge để đọc nội dung mã QR vào ô `ticketCode`/`qrCode` (scanner chỉ là cách nhập liệu; luôn phải có `qrCode` hợp lệ). QR xoay mỗi 30 giây nên phải quét mã đang hiển thị ngay lúc check-in.
 
 ---
 
